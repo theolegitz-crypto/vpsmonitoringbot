@@ -1,0 +1,141 @@
+import { useState } from "react";
+
+const initialState = {
+  name: "",
+  address: "",
+  description: "",
+  websiteUrl: "",
+  tcpPorts: "22,80,443",
+  sslDomain: "",
+};
+
+export function AddServerForm({ onSubmit, busy }) {
+  const [form, setForm] = useState(initialState);
+
+  function handleChange(event) {
+    const { name, value } = event.target;
+    setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+
+    const ports = form.tcpPorts
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((item) => Number(item))
+      .filter((item) => Number.isFinite(item));
+
+    const serviceChecks = [];
+
+    if (form.websiteUrl.trim()) {
+      serviceChecks.push({
+        name: `${form.name}-http`,
+        check_type: "http",
+        target: form.websiteUrl.trim(),
+        path: "",
+        interval_seconds: 60,
+        timeout_seconds: 5,
+      });
+    }
+
+    ports.forEach((port) => {
+      serviceChecks.push({
+        name: `${form.name}-tcp-${port}`,
+        check_type: "tcp",
+        target: form.address.trim(),
+        port,
+        interval_seconds: 60,
+        timeout_seconds: 5,
+      });
+    });
+
+    if (form.sslDomain.trim()) {
+      serviceChecks.push({
+        name: `${form.name}-ssl`,
+        check_type: "ssl",
+        target: form.sslDomain.trim(),
+        port: 443,
+        interval_seconds: 3600,
+        timeout_seconds: 5,
+      });
+    }
+
+    await onSubmit({
+      name: form.name.trim(),
+      address: form.address.trim(),
+      description: form.description.trim(),
+      service_checks: serviceChecks,
+    });
+
+    setForm(initialState);
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="rounded-[2rem] border border-white/8 bg-panel/85 p-6 shadow-glow">
+      <div className="mb-5">
+        <p className="text-xs uppercase tracking-[0.24em] text-slate-400">New monitor</p>
+        <h2 className="mt-2 text-2xl font-bold">Add VPS and checks</h2>
+        <p className="mt-2 text-sm text-slate-400">Create a host and optionally bootstrap HTTP, TCP and SSL probes.</p>
+      </div>
+
+      <div className="grid gap-4">
+        <input
+          required
+          name="name"
+          value={form.name}
+          onChange={handleChange}
+          placeholder="Name"
+          className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition focus:border-accent"
+        />
+        <input
+          required
+          name="address"
+          value={form.address}
+          onChange={handleChange}
+          placeholder="IP or domain"
+          className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition focus:border-accent"
+        />
+        <textarea
+          name="description"
+          value={form.description}
+          onChange={handleChange}
+          placeholder="Description"
+          rows="3"
+          className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition focus:border-accent"
+        />
+        <input
+          name="websiteUrl"
+          value={form.websiteUrl}
+          onChange={handleChange}
+          placeholder="Website URL for HTTP check (optional)"
+          className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition focus:border-accent"
+        />
+        <input
+          name="tcpPorts"
+          value={form.tcpPorts}
+          onChange={handleChange}
+          placeholder="TCP ports, comma separated"
+          className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition focus:border-accent"
+        />
+        <input
+          name="sslDomain"
+          value={form.sslDomain}
+          onChange={handleChange}
+          placeholder="SSL domain (optional)"
+          className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition focus:border-accent"
+        />
+      </div>
+
+      <button
+        type="submit"
+        disabled={busy}
+        className="mt-5 w-full rounded-full bg-accent px-5 py-3 font-semibold text-slate-950 transition hover:bg-accent/90 disabled:opacity-60"
+      >
+        {busy ? "Creating..." : "Create monitor"}
+      </button>
+    </form>
+  );
+}
+
