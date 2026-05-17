@@ -1,8 +1,15 @@
+from dataclasses import dataclass
 from functools import cached_property
 from typing import List
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+@dataclass(frozen=True)
+class TelegramTarget:
+    chat_id: int
+    message_thread_id: int | None = None
 
 
 class Settings(BaseSettings):
@@ -48,6 +55,8 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str = ""
     telegram_admin_chat_ids: str = ""
+    telegram_allowed_chat_ids: str = ""
+    telegram_allow_private_chats: bool = True
 
     @field_validator("debug", mode="before")
     @classmethod
@@ -61,17 +70,59 @@ class Settings(BaseSettings):
         return value
 
     @cached_property
+    def admin_chat_targets(self) -> list[TelegramTarget]:
+        return self._parse_telegram_targets(self.telegram_admin_chat_ids)
+
+    @cached_property
     def admin_chat_ids(self) -> list[int]:
-        chat_ids: list[int] = []
-        for raw_item in self.telegram_admin_chat_ids.split(","):
+        return [target.chat_id for target in self.admin_chat_targets]
+
+    @cached_property
+    def allowed_chat_targets(self) -> list[TelegramTarget]:
+        return self._parse_telegram_targets(self.telegram_allowed_chat_ids)
+
+    def _parse_telegram_targets(self, raw_value: str) -> list[TelegramTarget]:
+        targets: list[TelegramTarget] = []
+        for raw_item in raw_value.split(","):
             item = raw_item.strip()
             if not item:
                 continue
             try:
-                chat_ids.append(int(item))
+                if ":" in item:
+                    chat_raw, topic_raw = item.split(":", 1)
+                    targets.append(
+                        TelegramTarget(
+                            chat_id=int(chat_raw.strip()),
+                            message_thread_id=int(topic_raw.strip()),
+                        )
+                    )
+                else:
+                    targets.append(TelegramTarget(chat_id=int(item)))
             except ValueError:
                 continue
-        return chat_ids
+        return targets
+
+    def is_allowed_telegram_context(
+        self,
+        *,
+        chat_id: int,
+        message_thread_id: int | None,
+        chat_type: str,
+    ) -> bool:
+        if chat_type == "private" and self.telegram_allow_private_chats:
+            return True
+
+        if not self.allowed_chat_targets:
+            return True
+
+        for target in self.allowed_chat_targets:
+            if target.chat_id != chat_id:
+                continue
+            if target.message_thread_id is None:
+                return True
+            if target.message_thread_id == message_thread_id:
+                return True
+        return False
 
 
 settings = Settings()

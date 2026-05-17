@@ -14,6 +14,7 @@ logging.basicConfig(level=logging.INFO)
 BOT_COMMANDS = [
     BotCommand(command="start", description="Открыть меню"),
     BotCommand(command="help", description="Справка по командам"),
+    BotCommand(command="chatinfo", description="Показать chat id и topic id"),
     BotCommand(command="status", description="Общий статус мониторинга"),
     BotCommand(command="servers", description="Список серверов и кнопки выбора"),
     BotCommand(command="server", description="Выбрать сервер и открыть детали"),

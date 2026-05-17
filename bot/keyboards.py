@@ -73,9 +73,7 @@ def server_picker_keyboard(servers: list, action: str, page: int = 0) -> InlineK
             InlineKeyboardButton(text="⬅️ Назад", callback_data=f"picker:{action}:{page - 1}")
         )
     if total_pages > 1:
-        navigation.append(
-            InlineKeyboardButton(text=f"{page + 1}/{total_pages}", callback_data="noop")
-        )
+        navigation.append(InlineKeyboardButton(text=f"{page + 1}/{total_pages}", callback_data="noop"))
     if page < total_pages - 1:
         navigation.append(
             InlineKeyboardButton(text="Вперёд ➡️", callback_data=f"picker:{action}:{page + 1}")
@@ -95,9 +93,15 @@ def server_picker_keyboard(servers: list, action: str, page: int = 0) -> InlineK
 
 def server_actions_keyboard(server_id: int, is_muted: bool) -> InlineKeyboardMarkup:
     mute_button = (
-        InlineKeyboardButton(text="🔔 Включить уведомления", callback_data=f"server:unmute:{server_id}")
+        InlineKeyboardButton(
+            text="🔔 Включить уведомления",
+            callback_data=f"server:unmute:{server_id}",
+        )
         if is_muted
-        else InlineKeyboardButton(text="🔕 Приглушить", callback_data=f"server:muteprompt:{server_id}")
+        else InlineKeyboardButton(
+            text="🔕 Приглушить",
+            callback_data=f"server:muteprompt:{server_id}",
+        )
     )
 
     return InlineKeyboardMarkup(
@@ -110,7 +114,12 @@ def server_actions_keyboard(server_id: int, is_muted: bool) -> InlineKeyboardMar
                 InlineKeyboardButton(text="🔌 Порты", callback_data=f"server:ports:{server_id}"),
                 mute_button,
             ],
-            [InlineKeyboardButton(text="🖥 К списку серверов", callback_data="picker:detail:0")],
+            [
+                InlineKeyboardButton(
+                    text="🖥 К списку серверов",
+                    callback_data="picker:detail:0",
+                )
+            ],
         ]
     )
 
@@ -127,6 +136,11 @@ def mute_duration_keyboard(server_id: int) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="1d", callback_data=f"mute:{server_id}:1d"),
                 InlineKeyboardButton(text="1w", callback_data=f"mute:{server_id}:1w"),
             ],
-            [InlineKeyboardButton(text="⬅️ Назад к серверу", callback_data=f"server:detail:{server_id}")],
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад к серверу",
+                    callback_data=f"server:detail:{server_id}",
+                )
+            ],
         ]
     )
