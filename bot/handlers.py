@@ -1,13 +1,17 @@
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.keyboards import (
     ALERTS_BUTTON,
+    ADD_SERVER_BUTTON,
+    CANCEL_BUTTON,
     EXAMPLES_BUTTON,
     HELP_BUTTON,
     SERVERS_BUTTON,
     STATUS_BUTTON,
+    cancel_keyboard,
     main_menu_keyboard,
     mute_duration_keyboard,
     server_actions_keyboard,
@@ -15,10 +19,13 @@ from bot.keyboards import (
 )
 from bot.services import (
     alerts_text,
+    create_server_from_bot,
     get_server_detail,
     help_text,
     history_text,
     history_text_by_id,
+    normalize_optional_text,
+    parse_ports_input,
     list_servers_for_picker,
     mute_text,
     mute_text_by_id,
@@ -34,6 +41,7 @@ from bot.services import (
     unmute_text,
     unmute_text_by_id,
 )
+from bot.states import AddServerStates
 
 
 router = Router()
@@ -83,6 +91,16 @@ async def render_server_detail(callback: CallbackQuery, server_id: int) -> None:
     )
 
 
+async def start_add_server_flow(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await state.set_state(AddServerStates.waiting_for_name)
+    await message.answer(
+        "➕ Добавление сервера\n\nШаг 1 из 6.\nВведите имя сервера.\nПример: `vps-germany-1`",
+        reply_markup=cancel_keyboard,
+        parse_mode="Markdown",
+    )
+
+
 @router.message(Command("start"))
 async def cmd_start(message: Message) -> None:
     await message.answer(
@@ -108,6 +126,11 @@ async def cmd_status(message: Message) -> None:
 async def cmd_servers(message: Message) -> None:
     await message.answer(await servers_text())
     await send_server_picker(message, "detail")
+
+
+@router.message(Command("addserver"))
+async def cmd_addserver(message: Message, state: FSMContext) -> None:
+    await start_add_server_flow(message, state)
 
 
 @router.message(Command("server"))
@@ -218,9 +241,124 @@ async def examples_button(message: Message) -> None:
         "/ping\n"
         "/history\n"
         "/ports\n"
+        "/addserver\n"
         "/mute\n"
         "/ssl example.com"
     )
+
+
+@router.message(F.text == ADD_SERVER_BUTTON)
+async def add_server_button(message: Message, state: FSMContext) -> None:
+    await start_add_server_flow(message, state)
+
+
+@router.message(Command("cancel"))
+@router.message(F.text == CANCEL_BUTTON)
+async def cancel_flow(message: Message, state: FSMContext) -> None:
+    current_state = await state.get_state()
+    if not current_state:
+        await message.answer("Нечего отменять.", reply_markup=main_menu_keyboard)
+        return
+    await state.clear()
+    await message.answer("❌ Действие отменено.", reply_markup=main_menu_keyboard)
+
+
+@router.message(AddServerStates.waiting_for_name)
+async def add_server_name_step(message: Message, state: FSMContext) -> None:
+    name = message.text.strip()
+    if len(name) < 2:
+        await message.answer("Имя слишком короткое. Введи нормальное имя сервера.")
+        return
+    await state.update_data(name=name)
+    await state.set_state(AddServerStates.waiting_for_address)
+    await message.answer(
+        "Шаг 2 из 6.\nВведите IP или домен сервера.\nПример: `203.0.113.10` или `vps.example.com`",
+        parse_mode="Markdown",
+    )
+
+
+@router.message(AddServerStates.waiting_for_address)
+async def add_server_address_step(message: Message, state: FSMContext) -> None:
+    address = message.text.strip()
+    if len(address) < 3:
+        await message.answer("Адрес выглядит слишком коротким. Попробуй ещё раз.")
+        return
+    await state.update_data(address=address)
+    await state.set_state(AddServerStates.waiting_for_description)
+    await message.answer(
+        "Шаг 3 из 6.\nВведите описание сервера или отправь `-`, если описание не нужно.",
+        parse_mode="Markdown",
+    )
+
+
+@router.message(AddServerStates.waiting_for_description)
+async def add_server_description_step(message: Message, state: FSMContext) -> None:
+    await state.update_data(description=normalize_optional_text(message.text))
+    await state.set_state(AddServerStates.waiting_for_website_url)
+    await message.answer(
+        "Шаг 4 из 6.\nВведи URL сайта для HTTP-проверки или `-`, если не нужно.\nПример: `https://example.com`",
+        parse_mode="Markdown",
+    )
+
+
+@router.message(AddServerStates.waiting_for_website_url)
+async def add_server_website_step(message: Message, state: FSMContext) -> None:
+    await state.update_data(website_url=normalize_optional_text(message.text))
+    await state.set_state(AddServerStates.waiting_for_ports)
+    await message.answer(
+        "Шаг 5 из 6.\nВведи TCP-порты через запятую или `-`, если не нужно.\nПример: `22,80,443,5432`",
+        parse_mode="Markdown",
+    )
+
+
+@router.message(AddServerStates.waiting_for_ports)
+async def add_server_ports_step(message: Message, state: FSMContext) -> None:
+    try:
+        ports = parse_ports_input(message.text)
+    except ValueError as exc:
+        await message.answer(str(exc))
+        return
+    await state.update_data(tcp_ports=ports)
+    await state.set_state(AddServerStates.waiting_for_ssl_domain)
+    await message.answer(
+        "Шаг 6 из 6.\nВведи домен для SSL-проверки или `-`, если не нужно.\nПример: `example.com`",
+        parse_mode="Markdown",
+    )
+
+
+@router.message(AddServerStates.waiting_for_ssl_domain)
+async def add_server_ssl_step(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    ssl_domain = normalize_optional_text(message.text)
+
+    try:
+        server, checks_added = await create_server_from_bot(
+            name=data["name"],
+            address=data["address"],
+            description=data.get("description"),
+            website_url=data.get("website_url"),
+            tcp_ports=data.get("tcp_ports", []),
+            ssl_domain=ssl_domain,
+        )
+    except ValueError as exc:
+        await message.answer(f"❌ Не удалось создать сервер: {exc}", reply_markup=main_menu_keyboard)
+        await state.clear()
+        return
+
+    await state.clear()
+    await message.answer(
+        f"✅ Сервер `{server.name}` добавлен.\nСоздано проверок: {checks_added}",
+        reply_markup=main_menu_keyboard,
+        parse_mode="Markdown",
+    )
+
+    text = await server_detail_text_by_id(server.id)
+    if text:
+        detail = await get_server_detail(server.id)
+        await message.answer(
+            text,
+            reply_markup=server_actions_keyboard(server.id, is_muted=detail.muted_until is not None if detail else False),
+        )
 
 
 @router.callback_query(F.data == "noop")

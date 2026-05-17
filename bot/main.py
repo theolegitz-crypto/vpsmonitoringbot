@@ -20,9 +20,11 @@ BOT_COMMANDS = [
     BotCommand(command="ping", description="Выбрать сервер и проверить ping"),
     BotCommand(command="history", description="Выбрать сервер и открыть историю"),
     BotCommand(command="ports", description="Выбрать сервер и показать порты"),
+    BotCommand(command="addserver", description="Добавить сервер через Telegram"),
     BotCommand(command="alerts", description="Последние алерты"),
     BotCommand(command="mute", description="Выбрать сервер и приглушить алерты"),
     BotCommand(command="unmute", description="Выбрать сервер и включить алерты"),
+    BotCommand(command="cancel", description="Отменить текущее действие"),
     BotCommand(command="ssl", description="Проверить SSL сертификат"),
 ]
 

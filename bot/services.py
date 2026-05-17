@@ -4,7 +4,7 @@ from sqlalchemy import func, select
 
 from backend.app.core.config import settings
 from backend.app.db.session import AsyncSessionLocal
-from backend.app.models import AlertEvent, Server, ServerStatus, ServiceCheck
+from backend.app.models import AlertEvent, CheckType, Server, ServerStatus, ServiceCheck
 from backend.app.services.dashboard import DashboardService
 from backend.app.services.monitoring import MonitoringService
 from backend.app.utils.service_checks import check_ssl_expiry
@@ -49,6 +49,34 @@ def _safe_percent(value: float | None) -> str:
     return f"{(value or 0):.1f}%"
 
 
+def normalize_optional_text(value: str) -> str | None:
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    if cleaned.lower() in {"-", "нет", "none", "skip", "пропустить"}:
+        return None
+    return cleaned
+
+
+def parse_ports_input(value: str) -> list[int]:
+    normalized = normalize_optional_text(value)
+    if not normalized:
+        return []
+
+    ports: list[int] = []
+    for raw in normalized.split(","):
+        item = raw.strip()
+        if not item:
+            continue
+        if not item.isdigit():
+            raise ValueError("Порты нужно указывать числами через запятую, например: 22,80,443")
+        port = int(item)
+        if port < 1 or port > 65535:
+            raise ValueError("Порт должен быть в диапазоне 1-65535")
+        ports.append(port)
+    return ports
+
+
 def help_text() -> str:
     return (
         "🤖 Команды SwagMonitor\n\n"
@@ -72,6 +100,88 @@ def help_text() -> str:
 
 async def list_servers_for_picker():
     return await dashboard_service.list_servers()
+
+
+async def create_server_from_bot(
+    *,
+    name: str,
+    address: str,
+    description: str | None,
+    website_url: str | None,
+    tcp_ports: list[int],
+    ssl_domain: str | None,
+) -> tuple[Server, int]:
+    async with AsyncSessionLocal() as session:
+        existing = await session.scalar(select(Server).where(func.lower(Server.name) == name.lower()))
+        if existing:
+            raise ValueError("Сервер с таким именем уже существует")
+
+        server = Server(
+            name=name,
+            address=address,
+            description=description,
+            check_interval_seconds=settings.default_check_interval_seconds,
+            consecutive_alert_threshold=settings.default_consecutive_alert_threshold,
+        )
+        session.add(server)
+        await session.flush()
+
+        checks_added = 0
+
+        if website_url:
+            session.add(
+                ServiceCheck(
+                    server_id=server.id,
+                    name=f"{name}-http",
+                    check_type=CheckType.HTTP,
+                    target=website_url,
+                    path="",
+                    timeout_seconds=settings.http_timeout_seconds,
+                    interval_seconds=settings.default_check_interval_seconds,
+                    expected_status=200,
+                    ssl_expiry_warning_days=settings.ssl_warning_days,
+                    consecutive_alert_threshold=settings.default_consecutive_alert_threshold,
+                )
+            )
+            checks_added += 1
+
+        for port in tcp_ports:
+            session.add(
+                ServiceCheck(
+                    server_id=server.id,
+                    name=f"{name}-tcp-{port}",
+                    check_type=CheckType.TCP,
+                    target=address,
+                    port=port,
+                    timeout_seconds=settings.http_timeout_seconds,
+                    interval_seconds=settings.default_check_interval_seconds,
+                    expected_status=200,
+                    ssl_expiry_warning_days=settings.ssl_warning_days,
+                    consecutive_alert_threshold=settings.default_consecutive_alert_threshold,
+                )
+            )
+            checks_added += 1
+
+        if ssl_domain:
+            session.add(
+                ServiceCheck(
+                    server_id=server.id,
+                    name=f"{name}-ssl",
+                    check_type=CheckType.SSL,
+                    target=ssl_domain,
+                    port=443,
+                    timeout_seconds=settings.http_timeout_seconds,
+                    interval_seconds=max(3600, settings.default_check_interval_seconds),
+                    expected_status=200,
+                    ssl_expiry_warning_days=settings.ssl_warning_days,
+                    consecutive_alert_threshold=settings.default_consecutive_alert_threshold,
+                )
+            )
+            checks_added += 1
+
+        await session.commit()
+        await session.refresh(server)
+        return server, checks_added
 
 
 async def find_server_by_name(name: str) -> Server | None:

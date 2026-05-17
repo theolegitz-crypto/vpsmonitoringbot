@@ -15,6 +15,8 @@ SERVERS_BUTTON = "🖥 Серверы"
 ALERTS_BUTTON = "🚨 Алерты"
 HELP_BUTTON = "❓ Помощь"
 EXAMPLES_BUTTON = "📚 Примеры"
+ADD_SERVER_BUTTON = "➕ Добавить сервер"
+CANCEL_BUTTON = "❌ Отмена"
 
 PICKER_PAGE_SIZE = 8
 
@@ -22,11 +24,19 @@ PICKER_PAGE_SIZE = 8
 main_menu_keyboard = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text=STATUS_BUTTON), KeyboardButton(text=SERVERS_BUTTON)],
-        [KeyboardButton(text=ALERTS_BUTTON), KeyboardButton(text=HELP_BUTTON)],
+        [KeyboardButton(text=ALERTS_BUTTON), KeyboardButton(text=ADD_SERVER_BUTTON)],
+        [KeyboardButton(text=HELP_BUTTON)],
         [KeyboardButton(text=EXAMPLES_BUTTON)],
     ],
     resize_keyboard=True,
     input_field_placeholder="Выбери кнопку или введи команду",
+)
+
+
+cancel_keyboard = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text=CANCEL_BUTTON)]],
+    resize_keyboard=True,
+    input_field_placeholder="Заполни шаг или нажми Отмена",
 )
 
 
