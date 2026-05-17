@@ -5,7 +5,7 @@ const initialState = {
   address: "",
   description: "",
   websiteUrl: "",
-  tcpPorts: "22,80,443",
+  tcpPorts: "22",
   sslDomain: "",
 };
 
@@ -118,7 +118,7 @@ export function AddServerForm({ onSubmit, busy }) {
           name="tcpPorts"
           value={form.tcpPorts}
           onChange={handleChange}
-          placeholder="TCP ports, comma separated, for example 22,80,443,5432"
+          placeholder="TCP ports, comma separated, for example 22,443,5432"
           className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition focus:border-accent"
         />
         <input
@@ -140,6 +140,9 @@ export function AddServerForm({ onSubmit, busy }) {
         - one TCP check per listed port
         <br />
         - one SSL check if SSL domain is filled
+        <br />
+        <br />
+        Tip: raw TCP checks go directly to the server address. Add port 80 or 443 only if that exact IP or hostname really accepts direct connections on those ports.
       </div>
 
       <button

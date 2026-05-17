@@ -29,6 +29,23 @@ def _normalize_url(target: str, path: str | None = None) -> str:
     return f"{base}{path or ''}"
 
 
+def _format_probe_exception(exc: Exception) -> str:
+    message = str(exc).strip()
+    if message:
+        return message
+
+    if isinstance(exc, asyncio.TimeoutError):
+        return "connection timed out"
+
+    if isinstance(exc, socket.gaierror):
+        return f"DNS resolution failed ({exc.__class__.__name__})"
+
+    if isinstance(exc, ConnectionRefusedError):
+        return "connection refused"
+
+    return exc.__class__.__name__
+
+
 async def check_http(target: str, path: str | None, expected_status: int, timeout_seconds: int) -> ServiceProbeResult:
     url = _normalize_url(target, path)
     started = perf_counter()
@@ -86,12 +103,13 @@ async def check_tcp(target: str, port: int, timeout_seconds: int) -> ServiceProb
             details={"target": target, "port": port},
         )
     except (asyncio.TimeoutError, OSError) as exc:
+        reason = _format_probe_exception(exc)
         return ServiceProbeResult(
             status=ServerStatus.OFFLINE,
             severity=Severity.CRITICAL,
             response_time_ms=None,
             status_code=None,
-            message=f"TCP port {port} is unavailable: {exc}",
+            message=f"TCP port {port} is unavailable: {reason}",
             details={"target": target, "port": port},
         )
 
@@ -160,4 +178,3 @@ async def check_ssl_expiry(target: str, port: int, timeout_seconds: int, warning
             message=f"SSL check failed: {exc}",
             details={"target": target, "port": port},
         )
-

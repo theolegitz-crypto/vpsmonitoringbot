@@ -1,5 +1,17 @@
 const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 
+function tryParseJson(text) {
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 async function request(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
@@ -10,28 +22,33 @@ async function request(path, options = {}) {
     ...options,
   });
 
+  const hasBody = response.status !== 204 && response.status !== 205;
+  const text = hasBody ? await response.text() : "";
+  const data = tryParseJson(text);
+
   if (!response.ok) {
     if (response.status === 401) {
       window.dispatchEvent(new CustomEvent("swagmonitor:unauthorized"));
     }
+
     let message = `Request failed with ${response.status}`;
-    try {
-      const data = await response.json();
-      message = data.detail || JSON.stringify(data);
-    } catch {
-      const text = await response.text();
+
+    if (data && typeof data === "object") {
+      message = data.detail || data.message || JSON.stringify(data);
+    } else {
       message = text || message;
     }
+
     const error = new Error(message);
     error.status = response.status;
     throw error;
   }
 
-  if (response.status === 204) {
+  if (!hasBody || !text) {
     return null;
   }
 
-  return response.json();
+  return data ?? text;
 }
 
 export const api = {
