@@ -2,7 +2,10 @@
 set -eu
 
 AUTH_FILE="/etc/nginx/.htpasswd"
-AUTH_CONF="/etc/nginx/conf.d/auth.conf"
+AUTH_DIR="/etc/nginx/auth"
+AUTH_CONF="$AUTH_DIR/basic-auth.conf"
+
+mkdir -p "$AUTH_DIR"
 
 if [ "${PANEL_BASIC_AUTH_ENABLED:-false}" != "true" ]; then
   printf "# basic auth disabled\n" > "$AUTH_CONF"
@@ -15,5 +18,7 @@ if [ -z "${PANEL_AUTH_USER:-}" ] || [ -z "${PANEL_AUTH_PASSWORD:-}" ]; then
 fi
 
 htpasswd -bc "$AUTH_FILE" "$PANEL_AUTH_USER" "$PANEL_AUTH_PASSWORD"
+chown root:nginx "$AUTH_FILE"
 chmod 640 "$AUTH_FILE"
 printf "auth_basic \"Restricted SwagMonitor Panel\";\nauth_basic_user_file %s;\n" "$AUTH_FILE" > "$AUTH_CONF"
+chmod 644 "$AUTH_CONF"
