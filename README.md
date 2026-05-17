@@ -137,6 +137,73 @@ npm install
 npm run dev
 ```
 
+## Windows Run Without Docker
+
+This mode keeps everything on your computer directly instead of containers.
+
+### What you need
+
+- Python 3.12+
+- Node.js 20+
+- PostgreSQL installed locally
+
+### 1. Create the database
+
+Create a local database and user in PostgreSQL, for example:
+
+```sql
+CREATE DATABASE monitoringswagbot;
+CREATE USER monitor WITH PASSWORD 'monitor';
+GRANT ALL PRIVILEGES ON DATABASE monitoringswagbot TO monitor;
+\c monitoringswagbot
+GRANT USAGE, CREATE ON SCHEMA public TO monitor;
+ALTER SCHEMA public OWNER TO monitor;
+```
+
+### 2. Prepare `.env`
+
+Copy `.env.example` to `.env` and for local PostgreSQL use:
+
+```env
+DATABASE_URL=postgresql+asyncpg://monitor:monitor@127.0.0.1:5432/monitoringswagbot
+ALEMBIC_DATABASE_URL=postgresql+psycopg://monitor:monitor@127.0.0.1:5432/monitoringswagbot
+```
+
+If you do not need Telegram right now, you can leave `TELEGRAM_BOT_TOKEN` empty and simply not start the bot.
+
+### 3. Run locally
+
+In PowerShell from the project root:
+
+```powershell
+.\scripts\run_backend.ps1
+```
+
+In a second PowerShell window:
+
+```powershell
+.\scripts\run_frontend.ps1
+```
+
+Optional, in a third window:
+
+```powershell
+.\scripts\run_bot.ps1
+```
+
+Or start backend + frontend together:
+
+```powershell
+.\scripts\run_local.ps1
+```
+
+### 4. Open the app
+
+- Dashboard: `http://localhost:3000`
+- API docs: `http://127.0.0.1:8000/docs`
+
+The frontend dev server now proxies `/api` to local FastAPI automatically, so no extra frontend env config is needed.
+
 ## Next Improvements
 
 - Add authentication for the admin dashboard

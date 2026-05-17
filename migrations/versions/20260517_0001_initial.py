@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision: str = "20260517_0001"
@@ -17,18 +18,39 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-server_status = sa.Enum("ONLINE", "DEGRADED", "OFFLINE", "UNKNOWN", name="server_status")
-severity_enum = sa.Enum("INFO", "WARNING", "CRITICAL", name="severity_enum")
-incident_status = sa.Enum("OPEN", "RESOLVED", name="incident_status")
-check_type = sa.Enum("ICMP", "HTTP", "TCP", "SSL", name="check_type")
+server_status = postgresql.ENUM(
+    "ONLINE", "DEGRADED", "OFFLINE", "UNKNOWN", name="server_status", create_type=False
+)
+severity_enum = postgresql.ENUM(
+    "INFO", "WARNING", "CRITICAL", name="severity_enum", create_type=False
+)
+incident_status = postgresql.ENUM(
+    "OPEN", "RESOLVED", name="incident_status", create_type=False
+)
+check_type = postgresql.ENUM(
+    "ICMP", "HTTP", "TCP", "SSL", name="check_type", create_type=False
+)
+
+server_status_create = postgresql.ENUM(
+    "ONLINE", "DEGRADED", "OFFLINE", "UNKNOWN", name="server_status"
+)
+severity_enum_create = postgresql.ENUM(
+    "INFO", "WARNING", "CRITICAL", name="severity_enum"
+)
+incident_status_create = postgresql.ENUM(
+    "OPEN", "RESOLVED", name="incident_status"
+)
+check_type_create = postgresql.ENUM(
+    "ICMP", "HTTP", "TCP", "SSL", name="check_type"
+)
 
 
 def upgrade() -> None:
     bind = op.get_bind()
-    server_status.create(bind, checkfirst=True)
-    severity_enum.create(bind, checkfirst=True)
-    incident_status.create(bind, checkfirst=True)
-    check_type.create(bind, checkfirst=True)
+    server_status_create.create(bind, checkfirst=True)
+    severity_enum_create.create(bind, checkfirst=True)
+    incident_status_create.create(bind, checkfirst=True)
+    check_type_create.create(bind, checkfirst=True)
 
     op.create_table(
         "servers",
@@ -149,7 +171,7 @@ def downgrade() -> None:
     op.drop_table("servers")
 
     bind = op.get_bind()
-    check_type.drop(bind, checkfirst=True)
-    incident_status.drop(bind, checkfirst=True)
-    severity_enum.drop(bind, checkfirst=True)
-    server_status.drop(bind, checkfirst=True)
+    check_type_create.drop(bind, checkfirst=True)
+    incident_status_create.drop(bind, checkfirst=True)
+    severity_enum_create.drop(bind, checkfirst=True)
+    server_status_create.drop(bind, checkfirst=True)

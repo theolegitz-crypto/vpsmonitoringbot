@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 from backend.app.models import AlertEvent, CheckResult, Incident, Server, ServerStatus
 from backend.app.schemas.common import AlertEventRead, CheckResultRead, HistoryPoint, IncidentRead, MetricPoint
 from backend.app.schemas.server import OverviewResponse, OverviewSummary, ServerCard, ServerDetail
+from backend.app.schemas.service_check import ServiceCheckRead
 
 
 class DashboardService:
@@ -82,7 +83,7 @@ class DashboardService:
                 history=history,
                 latency_series=latency_series,
                 packet_loss_series=packet_loss_series,
-                services=[service for service in server.service_checks],
+                services=card.services,
                 recent_incidents=[IncidentRead.model_validate(item) for item in incidents],
                 recent_alerts=[AlertEventRead.model_validate(item) for item in alerts],
                 latest_results=[CheckResultRead.model_validate(item) for item in results],
@@ -112,13 +113,26 @@ class DashboardService:
 
     async def _build_server_card(self, session: AsyncSession, server: Server) -> ServerCard:
         history = await self._history(session, server.id, 48)
+        services = [await self._build_service_check_read(session, service) for service in server.service_checks]
         return ServerCard(
             **server.__dict__,
             uptime_24h=await self._uptime(session, server.id, timedelta(hours=24)),
             uptime_7d=await self._uptime(session, server.id, timedelta(days=7)),
             uptime_30d=await self._uptime(session, server.id, timedelta(days=30)),
             history=history,
-            services=[service for service in server.service_checks],
+            services=services,
+        )
+
+    async def _build_service_check_read(
+        self, session: AsyncSession, service_check
+    ) -> ServiceCheckRead:
+        history = await self._service_history(session, service_check.id, 48)
+        return ServiceCheckRead(
+            **service_check.__dict__,
+            uptime_24h=await self._service_uptime(session, service_check.id, timedelta(hours=24)),
+            uptime_7d=await self._service_uptime(session, service_check.id, timedelta(days=7)),
+            uptime_30d=await self._service_uptime(session, service_check.id, timedelta(days=30)),
+            history=history,
         )
 
     async def _history(self, session: AsyncSession, server_id: int, limit: int) -> list[HistoryPoint]:
@@ -151,6 +165,22 @@ class DashboardService:
             for result in reversed(results)
         ]
 
+    async def _service_history(
+        self, session: AsyncSession, service_check_id: int, limit: int
+    ) -> list[HistoryPoint]:
+        results = (
+            await session.scalars(
+                select(CheckResult)
+                .where(CheckResult.service_check_id == service_check_id)
+                .order_by(CheckResult.checked_at.desc())
+                .limit(limit)
+            )
+        ).all()
+        return [
+            HistoryPoint(timestamp=result.checked_at, status=result.status, severity=result.severity)
+            for result in reversed(results)
+        ]
+
     async def _uptime(self, session: AsyncSession, server_id: int, window: timedelta) -> float:
         started_at = datetime.now(timezone.utc) - window
         results = (
@@ -158,6 +188,23 @@ class DashboardService:
                 select(CheckResult.status).where(
                     CheckResult.server_id == server_id,
                     CheckResult.service_check_id.is_(None),
+                    CheckResult.checked_at >= started_at,
+                )
+            )
+        ).all()
+        if not results:
+            return 0.0
+        available = sum(status != ServerStatus.OFFLINE for status in results)
+        return round((available / len(results)) * 100, 2)
+
+    async def _service_uptime(
+        self, session: AsyncSession, service_check_id: int, window: timedelta
+    ) -> float:
+        started_at = datetime.now(timezone.utc) - window
+        results = (
+            await session.scalars(
+                select(CheckResult.status).where(
+                    CheckResult.service_check_id == service_check_id,
                     CheckResult.checked_at >= started_at,
                 )
             )

@@ -1,7 +1,9 @@
 import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.app.core.config import settings
@@ -9,6 +11,9 @@ from backend.app.models import CheckResult, CheckType, Server, ServerStatus, Ser
 from backend.app.services.alerting import AlertManager
 from backend.app.utils.ping import PingStats, run_icmp_ping
 from backend.app.utils.service_checks import ServiceProbeResult, check_http, check_ssl_expiry, check_tcp
+
+
+logger = logging.getLogger(__name__)
 
 
 class MonitoringService:
@@ -22,9 +27,16 @@ class MonitoringService:
 
         async with self._lock:
             now = datetime.now(timezone.utc)
-            async with self.session_factory() as session:
-                servers = (await session.scalars(select(Server))).all()
-                checks = (await session.scalars(select(ServiceCheck))).all()
+            try:
+                async with self.session_factory() as session:
+                    servers = (await session.scalars(select(Server))).all()
+                    checks = (await session.scalars(select(ServiceCheck))).all()
+            except SQLAlchemyError as exc:
+                logger.warning(
+                    "Monitoring scheduler skipped because database schema is not ready. Run Alembic migrations first. Details: %s",
+                    exc,
+                )
+                return
 
             for server in servers:
                 if self._is_due(server.last_check_at, server.check_interval_seconds, now):

@@ -1,8 +1,9 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.models.enums import CheckType, ServerStatus
+from backend.app.schemas.common import HistoryPoint
 
 
 class ServiceCheckBase(BaseModel):
@@ -48,5 +49,9 @@ class ServiceCheckRead(ServiceCheckBase):
     last_error: str | None
     consecutive_issues: int
     consecutive_alert_threshold: int
+    uptime_24h: float = 0.0
+    uptime_7d: float = 0.0
+    uptime_30d: float = 0.0
+    history: list[HistoryPoint] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime | None

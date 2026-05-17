@@ -1,11 +1,14 @@
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
+from bot.keyboards import main_menu_keyboard
 from bot.services import (
     alerts_text,
+    help_text,
     history_text,
     mute_text,
+    ports_text,
     run_ping_text,
     run_ssl_text,
     server_detail_text,
@@ -21,9 +24,17 @@ router = Router()
 @router.message(Command("start"))
 async def cmd_start(message: Message) -> None:
     await message.answer(
-        "SwagMonitor bot is ready.\n"
-        "Commands: /status, /servers, /server <name>, /alerts, /history <name>, /mute <name> <duration>, /unmute <name>, /ping <name>, /ssl <domain>"
+        "SwagMonitor is ready.\n\n"
+        "Use the buttons below for quick actions.\n"
+        "For detailed actions use commands like /server vps1 or /ping vps1.\n\n"
+        "If you have not added monitors yet, do it in the web panel first.",
+        reply_markup=main_menu_keyboard,
     )
+
+
+@router.message(Command("help"))
+async def cmd_help(message: Message) -> None:
+    await message.answer(help_text(), reply_markup=main_menu_keyboard)
 
 
 @router.message(Command("status"))
@@ -58,6 +69,16 @@ async def cmd_history(message: Message, command: CommandObject) -> None:
         return
 
     text = await history_text(command.args.strip())
+    await message.answer(text or "Server not found")
+
+
+@router.message(Command("ports"))
+async def cmd_ports(message: Message, command: CommandObject) -> None:
+    if not command.args:
+        await message.answer("Usage: /ports <name>")
+        return
+
+    text = await ports_text(command.args.strip())
     await message.answer(text or "Server not found")
 
 
@@ -110,3 +131,16 @@ async def cmd_ssl(message: Message, command: CommandObject) -> None:
 
     await message.answer(await run_ssl_text(command.args.strip()))
 
+
+@router.message(F.text == "Examples")
+async def examples_button(message: Message) -> None:
+    await message.answer(
+        "Examples\n"
+        "/status\n"
+        "/servers\n"
+        "/server vps1\n"
+        "/ping vps1\n"
+        "/history vps1\n"
+        "/ports vps1\n"
+        "/mute vps1 2h"
+    )

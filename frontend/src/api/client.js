@@ -34,6 +34,10 @@ export const api = {
     request(`/servers/${id}/run-check`, {
       method: "POST",
     }),
+  runServiceCheck: (id) =>
+    request(`/servers/checks/${id}/run`, {
+      method: "POST",
+    }),
   muteServer: (id, duration) =>
     request(`/servers/${id}/mute`, {
       method: "POST",
@@ -44,4 +48,3 @@ export const api = {
       method: "POST",
     }),
 };
-

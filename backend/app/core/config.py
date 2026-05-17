@@ -1,7 +1,7 @@
 from functools import cached_property
 from typing import List
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -42,6 +42,17 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_admin_chat_ids: str = ""
 
+    @field_validator("debug", mode="before")
+    @classmethod
+    def normalize_debug(cls, value):
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"release", "production", "prod", "false", "0", "off", "no"}:
+                return False
+            if normalized in {"debug", "development", "dev", "true", "1", "on", "yes"}:
+                return True
+        return value
+
     @cached_property
     def admin_chat_ids(self) -> list[int]:
         chat_ids: list[int] = []
@@ -57,4 +68,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-

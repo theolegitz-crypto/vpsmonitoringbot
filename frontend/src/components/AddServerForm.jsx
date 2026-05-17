@@ -77,7 +77,9 @@ export function AddServerForm({ onSubmit, busy }) {
       <div className="mb-5">
         <p className="text-xs uppercase tracking-[0.24em] text-slate-400">New monitor</p>
         <h2 className="mt-2 text-2xl font-bold">Add VPS and checks</h2>
-        <p className="mt-2 text-sm text-slate-400">Create a host and optionally bootstrap HTTP, TCP and SSL probes.</p>
+        <p className="mt-2 text-sm text-slate-400">
+          This creates one server monitor and optional HTTP, TCP and SSL checks in one step.
+        </p>
       </div>
 
       <div className="grid gap-4">
@@ -86,7 +88,7 @@ export function AddServerForm({ onSubmit, busy }) {
           name="name"
           value={form.name}
           onChange={handleChange}
-          placeholder="Name"
+          placeholder="Name, for example vps-germany-1"
           className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition focus:border-accent"
         />
         <input
@@ -94,14 +96,14 @@ export function AddServerForm({ onSubmit, busy }) {
           name="address"
           value={form.address}
           onChange={handleChange}
-          placeholder="IP or domain"
+          placeholder="IP or domain, for example 203.0.113.10 or vps.example.com"
           className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition focus:border-accent"
         />
         <textarea
           name="description"
           value={form.description}
           onChange={handleChange}
-          placeholder="Description"
+          placeholder="Description, for example production app server in Frankfurt"
           rows="3"
           className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition focus:border-accent"
         />
@@ -109,23 +111,35 @@ export function AddServerForm({ onSubmit, busy }) {
           name="websiteUrl"
           value={form.websiteUrl}
           onChange={handleChange}
-          placeholder="Website URL for HTTP check (optional)"
+          placeholder="Website URL for HTTP check, for example https://example.com"
           className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition focus:border-accent"
         />
         <input
           name="tcpPorts"
           value={form.tcpPorts}
           onChange={handleChange}
-          placeholder="TCP ports, comma separated"
+          placeholder="TCP ports, comma separated, for example 22,80,443,5432"
           className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition focus:border-accent"
         />
         <input
           name="sslDomain"
           value={form.sslDomain}
           onChange={handleChange}
-          placeholder="SSL domain (optional)"
+          placeholder="SSL domain, for example example.com"
           className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition focus:border-accent"
         />
+      </div>
+
+      <div className="mt-4 rounded-2xl bg-white/5 p-4 text-xs leading-6 text-slate-400">
+        Created automatically:
+        <br />
+        - server availability monitor
+        <br />
+        - one HTTP check if website URL is filled
+        <br />
+        - one TCP check per listed port
+        <br />
+        - one SSL check if SSL domain is filled
       </div>
 
       <button
@@ -138,4 +152,3 @@ export function AddServerForm({ onSubmit, busy }) {
     </form>
   );
 }
-
