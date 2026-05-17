@@ -53,21 +53,25 @@ def help_text() -> str:
     return (
         "🤖 Команды SwagMonitor\n\n"
         "/status - общий статус всех мониторов\n"
-        "/servers - список серверов\n"
-        "/server <name> - подробности по одному серверу\n"
-        "/ping <name> - запустить ICMP-проверку прямо сейчас\n"
-        "/history <name> - последняя история статусов\n"
-        "/ports <name> - TCP, HTTP и SSL-проверки сервера\n"
+        "/servers - список серверов с выбором кнопками\n"
+        "/server - выбрать сервер и открыть подробности\n"
+        "/ping - выбрать сервер и запустить ping\n"
+        "/history - выбрать сервер и открыть историю\n"
+        "/ports - выбрать сервер и посмотреть TCP, HTTP и SSL\n"
         "/alerts - последние события и алерты\n"
-        "/mute <name> <duration> - выключить уведомления, пример: /mute vps1 2h\n"
-        "/unmute <name> - снова включить уведомления\n"
+        "/mute - выбрать сервер и приглушить уведомления\n"
+        "/unmute - выбрать сервер и включить уведомления\n"
         "/ssl <domain> - вручную проверить сертификат\n\n"
         "🧭 Как пользоваться\n"
-        "1. Сначала добавь серверы в веб-панели.\n"
-        "2. Подожди первые проверки или нажми ручной запуск.\n"
-        "3. Используй /status и /server <name> для быстрой диагностики.\n\n"
+        "1. Добавь серверы в веб-панели.\n"
+        "2. Открой /servers или нажми кнопку «Серверы».\n"
+        "3. Выбирай нужный сервер кнопками, без ручного ввода имени.\n\n"
         "История: 🟩 OK  🟨 деградация  🟥 сбой  ⬜ нет данных"
     )
+
+
+async def list_servers_for_picker():
+    return await dashboard_service.list_servers()
 
 
 async def find_server_by_name(name: str) -> Server | None:
@@ -75,9 +79,9 @@ async def find_server_by_name(name: str) -> Server | None:
         return await session.scalar(select(Server).where(func.lower(Server.name) == name.lower()))
 
 
-async def find_service_check_by_name(name: str) -> ServiceCheck | None:
+async def find_server_by_id(server_id: int) -> Server | None:
     async with AsyncSessionLocal() as session:
-        return await session.scalar(select(ServiceCheck).where(func.lower(ServiceCheck.name) == name.lower()))
+        return await session.get(Server, server_id)
 
 
 async def status_summary_text() -> str:
@@ -88,9 +92,8 @@ async def status_summary_text() -> str:
             "Открой веб-панель и добавь первый VPS:\n"
             "- имя\n"
             "- IP или домен\n"
-            "- при желании URL сайта\n"
-            "- при желании порты вроде 22, 80, 443\n\n"
-            "После этого используй /servers или /server <name>."
+            "- при желании сайт и порты\n\n"
+            "После этого нажми «🖥 Серверы»."
         )
 
     top_rows = "\n".join(
@@ -106,7 +109,7 @@ async def status_summary_text() -> str:
         f"⚪ Нет данных: {overview.summary.unknown}\n\n"
         "🖥 Кратко по серверам\n"
         f"{top_rows}\n\n"
-        "Подробности: /server <name>"
+        "Открой «🖥 Серверы» и выбери нужный сервер кнопкой."
     )
 
 
@@ -114,25 +117,18 @@ async def servers_text() -> str:
     servers = await dashboard_service.list_servers()
     if not servers:
         return "📭 Пока нет добавленных серверов. Добавь первый через веб-панель."
-    lines = ["🖥 Список серверов"]
-    for item in servers:
-        lines.append(
-            f"- {item.name} [{_status_text(item.status)}]\n"
-            f"  адрес: {item.address}\n"
-            f"  uptime: 24ч {item.uptime_24h:.1f}% | 7д {item.uptime_7d:.1f}% | 30д {item.uptime_30d:.1f}%\n"
-            f"  задержка: {_safe_latency(item.last_latency_ms)} | потери: {_safe_percent(item.last_packet_loss)}\n"
-            f"  проверок: {len(item.services)}"
-        )
-    lines.append("\nОткрыть один сервер: /server <name>")
-    return "\n".join(lines)
+    return (
+        "🖥 Список серверов готов.\n"
+        "Нажми на нужный сервер в кнопках ниже, чтобы открыть детали."
+    )
 
 
-async def server_detail_text(name: str) -> str | None:
-    server = await find_server_by_name(name)
-    if not server:
-        return None
+async def get_server_detail(server_id: int):
+    return await dashboard_service.build_server_detail(server_id)
 
-    detail = await dashboard_service.build_server_detail(server.id)
+
+async def server_detail_text_by_id(server_id: int) -> str | None:
+    detail = await get_server_detail(server_id)
     if not detail:
         return None
 
@@ -158,6 +154,13 @@ async def server_detail_text(name: str) -> str | None:
     )
 
 
+async def server_detail_text(name: str) -> str | None:
+    server = await find_server_by_name(name)
+    if not server:
+        return None
+    return await server_detail_text_by_id(server.id)
+
+
 async def alerts_text() -> str:
     async with AsyncSessionLocal() as session:
         events = (
@@ -171,8 +174,8 @@ async def alerts_text() -> str:
     )
 
 
-async def history_text(name: str) -> str | None:
-    server = await find_server_by_name(name)
+async def history_text_by_id(server_id: int) -> str | None:
+    server = await find_server_by_id(server_id)
     if not server:
         return None
 
@@ -188,18 +191,19 @@ async def history_text(name: str) -> str | None:
     )
 
 
-async def ports_text(name: str) -> str | None:
+async def history_text(name: str) -> str | None:
     server = await find_server_by_name(name)
     if not server:
         return None
+    return await history_text_by_id(server.id)
 
-    detail = await dashboard_service.build_server_detail(server.id)
+
+async def ports_text_by_id(server_id: int) -> str | None:
+    detail = await get_server_detail(server_id)
     if not detail:
         return None
 
-    relevant = [
-        check for check in detail.services if check.check_type.value in {"tcp", "http", "ssl"}
-    ]
+    relevant = [check for check in detail.services if check.check_type.value in {"tcp", "http", "ssl"}]
     if not relevant:
         return f"📭 {detail.name}: пока нет HTTP, TCP или SSL-проверок."
 
@@ -214,6 +218,25 @@ async def ports_text(name: str) -> str | None:
             f"  ответ: {_safe_latency(check.last_response_ms)} | код: {check.last_status_code or 'n/a'}"
         )
     return "\n".join(lines)
+
+
+async def ports_text(name: str) -> str | None:
+    server = await find_server_by_name(name)
+    if not server:
+        return None
+    return await ports_text_by_id(server.id)
+
+
+async def mute_text_by_id(server_id: int, duration: str) -> str | None:
+    until = datetime.now(timezone.utc) + parse_duration(duration)
+
+    async with AsyncSessionLocal() as session:
+        server = await session.get(Server, server_id)
+        if not server:
+            return None
+        server.muted_until = until
+        await session.commit()
+        return f"🔕 Сервер {server.name}: уведомления выключены до {until.isoformat()}"
 
 
 async def mute_text(name: str, duration: str) -> str | None:
@@ -237,6 +260,16 @@ async def mute_text(name: str, duration: str) -> str | None:
     return None
 
 
+async def unmute_text_by_id(server_id: int) -> str | None:
+    async with AsyncSessionLocal() as session:
+        server = await session.get(Server, server_id)
+        if not server:
+            return None
+        server.muted_until = None
+        await session.commit()
+        return f"🔔 Сервер {server.name}: уведомления снова включены"
+
+
 async def unmute_text(name: str) -> str | None:
     async with AsyncSessionLocal() as session:
         server = await session.scalar(select(Server).where(func.lower(Server.name) == name.lower()))
@@ -256,8 +289,8 @@ async def unmute_text(name: str) -> str | None:
     return None
 
 
-async def run_ping_text(name: str) -> str | None:
-    server = await find_server_by_name(name)
+async def run_ping_text_by_id(server_id: int) -> str | None:
+    server = await find_server_by_id(server_id)
     if not server:
         return None
 
@@ -272,6 +305,13 @@ async def run_ping_text(name: str) -> str | None:
         f"Потери: {_safe_percent(refreshed.last_packet_loss)}\n"
         f"Jitter: {_safe_latency(refreshed.last_jitter_ms)}"
     )
+
+
+async def run_ping_text(name: str) -> str | None:
+    server = await find_server_by_name(name)
+    if not server:
+        return None
+    return await run_ping_text_by_id(server.id)
 
 
 async def run_ssl_text(domain: str) -> str:
