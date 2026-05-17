@@ -6,6 +6,7 @@ import { api } from "../api/client";
 import { MetricChart } from "../components/MetricChart";
 import { StatusBadge } from "../components/StatusBadge";
 import { StatusStrip } from "../components/StatusStrip";
+import { useAutoRefresh } from "../hooks/useAutoRefresh";
 import { formatDate, formatLatency, formatPercent } from "../lib/format";
 
 
@@ -14,20 +15,36 @@ export function ServerPage() {
   const [server, setServer] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastClientRefreshAt, setLastClientRefreshAt] = useState(null);
 
-  async function loadServer() {
+  async function loadServer({ silent = false } = {}) {
     try {
+      if (silent) {
+        setRefreshing(true);
+      }
       setError("");
       const data = await api.server(serverId);
       setServer(data);
+      setLastClientRefreshAt(new Date().toISOString());
     } catch (loadError) {
       setError(loadError.message);
+    } finally {
+      setRefreshing(false);
     }
   }
 
   useEffect(() => {
     loadServer();
   }, [serverId]);
+
+  useAutoRefresh(
+    async () => {
+      await loadServer({ silent: true });
+    },
+    15000,
+    [serverId],
+  );
 
   async function handleMuteToggle() {
     if (!server) {
@@ -83,6 +100,12 @@ export function ServerPage() {
           </button>
         </div>
 
+        <div className="mt-5 rounded-3xl border border-white/8 bg-white/5 px-4 py-3 text-sm text-slate-300">
+          <div>Auto refresh: every 15 seconds</div>
+          <div className="mt-1">Last UI update: {lastClientRefreshAt ? formatDate(lastClientRefreshAt) : "just now"}</div>
+          <div className="mt-1">{refreshing ? "Refreshing..." : "Waiting for next refresh"}</div>
+        </div>
+
         <div className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-3xl bg-white/5 p-5">
             <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Status</p>
@@ -130,7 +153,7 @@ export function ServerPage() {
           </div>
           <p className="text-sm text-slate-400">Green OK, yellow degraded, red down, gray no data</p>
         </div>
-        <StatusStrip history={server.history} />
+        <StatusStrip history={server.history} maxVisible={48} compact={false} />
       </section>
 
       <section className="grid gap-6 xl:grid-cols-2">
@@ -175,8 +198,8 @@ export function ServerPage() {
                       </div>
                     </td>
                     <td className="px-4 py-4">
-                      <div className="min-w-[12rem]">
-                        <StatusStrip history={check.history} />
+                      <div className="w-[15rem]">
+                        <StatusStrip history={check.history} maxVisible={24} compact align="end" />
                       </div>
                     </td>
                   </tr>

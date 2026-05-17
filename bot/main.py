@@ -12,18 +12,18 @@ logging.basicConfig(level=logging.INFO)
 
 
 BOT_COMMANDS = [
-    BotCommand(command="start", description="Show main menu"),
-    BotCommand(command="help", description="How to use the bot"),
-    BotCommand(command="status", description="Global status of all monitors"),
-    BotCommand(command="servers", description="List configured servers"),
-    BotCommand(command="server", description="Details for one server"),
-    BotCommand(command="ping", description="Run ping check now"),
-    BotCommand(command="history", description="Recent status history"),
-    BotCommand(command="ports", description="Show TCP, HTTP and SSL checks"),
-    BotCommand(command="alerts", description="Last alert events"),
-    BotCommand(command="mute", description="Mute alerts for a monitor"),
-    BotCommand(command="unmute", description="Unmute alerts"),
-    BotCommand(command="ssl", description="Check SSL certificate"),
+    BotCommand(command="start", description="Открыть меню"),
+    BotCommand(command="help", description="Справка по командам"),
+    BotCommand(command="status", description="Общий статус мониторинга"),
+    BotCommand(command="servers", description="Список серверов"),
+    BotCommand(command="server", description="Подробности по серверу"),
+    BotCommand(command="ping", description="Проверить ping прямо сейчас"),
+    BotCommand(command="history", description="История статусов"),
+    BotCommand(command="ports", description="TCP, HTTP и SSL проверки"),
+    BotCommand(command="alerts", description="Последние алерты"),
+    BotCommand(command="mute", description="Отключить уведомления"),
+    BotCommand(command="unmute", description="Включить уведомления"),
+    BotCommand(command="ssl", description="Проверить SSL сертификат"),
 ]
 
 

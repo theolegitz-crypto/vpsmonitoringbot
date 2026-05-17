@@ -111,6 +111,41 @@ SwagMonitor is a starter project for VPS and service monitoring with:
 
 4. Add your first server from the dashboard or via `POST /api/servers`.
 
+## VPS Security
+
+SwagMonitor now supports built-in panel authentication with session cookies and users stored in PostgreSQL.
+
+### Required internal auth settings
+
+Before first startup set the bootstrap admin credentials in `.env`:
+
+```env
+AUTH_ENABLED=true
+AUTH_BOOTSTRAP_USERNAME=admin
+AUTH_BOOTSTRAP_PASSWORD=replace_with_a_long_random_password
+```
+
+On first startup the backend creates this admin user automatically. After login you can create more users from the web panel.
+
+### Optional extra outer protection
+
+You can also keep an additional HTTP Basic Auth layer in front of the panel:
+
+```env
+PANEL_BASIC_AUTH_ENABLED=true
+PANEL_AUTH_USER=admin
+PANEL_AUTH_PASSWORD=replace_with_a_long_random_password
+```
+
+Security changes included in `docker-compose.yml`:
+
+- the web panel requires internal login
+- optional extra Basic Auth can protect it before the login page
+- PostgreSQL on `5432` is bound only to `127.0.0.1`
+- backend API on `8000` is bound only to `127.0.0.1`
+
+That means external users can no longer access the API directly unless they already have shell access to the VPS or another reverse proxy exposes it.
+
 ## Local Development
 
 ### Backend

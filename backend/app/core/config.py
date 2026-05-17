@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     scheduler_tick_seconds: int = 30
     run_initial_checks: bool = True
 
+    auth_enabled: bool = True
+    auth_cookie_name: str = "swagmonitor_session"
+    auth_session_ttl_hours: int = 72
+    auth_cookie_secure: bool = False
+    auth_bootstrap_username: str = "admin"
+    auth_bootstrap_password: str = ""
+
     ping_attempts: int = 4
     ping_timeout_seconds: int = 1
     default_check_interval_seconds: int = 60

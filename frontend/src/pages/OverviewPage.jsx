@@ -5,6 +5,8 @@ import { api } from "../api/client";
 import { AddServerForm } from "../components/AddServerForm";
 import { MonitorTable } from "../components/MonitorTable";
 import { SummaryCard } from "../components/SummaryCard";
+import { UserAdminCard } from "../components/UserAdminCard";
+import { useAutoRefresh } from "../hooks/useAutoRefresh";
 import { formatDate, formatLatency, formatPercent } from "../lib/format";
 
 
@@ -65,20 +67,27 @@ function buildMonitorRows(servers) {
 }
 
 
-export function OverviewPage() {
+export function OverviewPage({ currentUser }) {
   const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [lastClientRefreshAt, setLastClientRefreshAt] = useState(null);
 
-  async function loadOverview() {
+  async function loadOverview({ silent = false } = {}) {
     try {
+      if (silent) {
+        setRefreshing(true);
+      }
       setError("");
       const data = await api.overview();
       setOverview(data);
+      setLastClientRefreshAt(new Date().toISOString());
     } catch (loadError) {
       setError(loadError.message);
     } finally {
+      setRefreshing(false);
       setLoading(false);
     }
   }
@@ -86,6 +95,14 @@ export function OverviewPage() {
   useEffect(() => {
     loadOverview();
   }, []);
+
+  useAutoRefresh(
+    async () => {
+      await loadOverview({ silent: true });
+    },
+    15000,
+    [],
+  );
 
   async function handleCreateServer(payload) {
     setCreating(true);
@@ -140,8 +157,11 @@ export function OverviewPage() {
           </div>
           <div className="rounded-3xl border border-white/8 bg-white/5 px-5 py-4 text-sm text-slate-300">
             <div>Generated: {formatDate(overview.generated_at)}</div>
+            <div className="mt-2">Auto refresh: every 15 seconds</div>
+            <div className="mt-2">Last UI update: {lastClientRefreshAt ? formatDate(lastClientRefreshAt) : "just now"}</div>
             <div className="mt-2">Rows in monitor table: {rows.length}</div>
             <div className="mt-2">Incidents stored: {overview.recent_incidents.length}</div>
+            <div className="mt-2">{refreshing ? "Refreshing..." : "Waiting for next refresh"}</div>
           </div>
         </div>
       </section>
@@ -165,7 +185,7 @@ export function OverviewPage() {
               <div>
                 <h2 className="text-2xl font-bold">Monitor list</h2>
                 <p className="mt-1 text-sm text-slate-400">
-                  Server rows are followed by service rows. The history strip shows the latest checks from left to right.
+                  Server rows are followed by service rows. The table refreshes automatically, and the history column shows only the latest blocks so the layout stays stable.
                 </p>
               </div>
             </div>
@@ -194,7 +214,7 @@ export function OverviewPage() {
             <div className="grid gap-3 text-sm text-slate-300">
               <div>1. Add a VPS with name and IP or domain.</div>
               <div>2. Optionally attach website, TCP ports and SSL checks in the same form.</div>
-              <div>3. Wait for the first monitoring loop or press Run for a manual check.</div>
+              <div>3. Wait for the first monitoring loop. The page refreshes itself every 15 seconds.</div>
               <div>4. Open a server page to inspect latency, packet loss, incidents and service rows in detail.</div>
               <div>5. Read the history strip: green is OK, yellow is degraded, red is down, gray is no data.</div>
             </div>
@@ -245,6 +265,8 @@ export function OverviewPage() {
               <div>- SSL check to catch expiring certificates early.</div>
             </div>
           </div>
+
+          {currentUser?.is_admin ? <UserAdminCard /> : null}
         </div>
       </section>
     </div>

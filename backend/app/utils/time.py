@@ -8,7 +8,7 @@ DURATION_PATTERN = re.compile(r"^(?P<value>\d+)(?P<unit>[mhdw])$")
 def parse_duration(value: str) -> timedelta:
     match = DURATION_PATTERN.match(value.strip().lower())
     if not match:
-        raise ValueError("Duration must look like 30m, 2h, 1d or 1w")
+        raise ValueError("Формат времени должен быть таким: 30m, 2h, 1d или 1w")
 
     amount = int(match.group("value"))
     unit = match.group("unit")
@@ -20,4 +20,3 @@ def parse_duration(value: str) -> timedelta:
     if unit == "d":
         return timedelta(days=amount)
     return timedelta(weeks=amount)
-

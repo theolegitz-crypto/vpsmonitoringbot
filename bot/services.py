@@ -16,25 +16,25 @@ monitoring_service = MonitoringService(AsyncSessionLocal)
 
 
 STATUS_LABELS = {
-    ServerStatus.ONLINE: "UP",
-    ServerStatus.DEGRADED: "WARN",
-    ServerStatus.OFFLINE: "DOWN",
-    ServerStatus.UNKNOWN: "NODATA",
+    ServerStatus.ONLINE: "🟢 OK",
+    ServerStatus.DEGRADED: "🟡 Деградация",
+    ServerStatus.OFFLINE: "🔴 Недоступен",
+    ServerStatus.UNKNOWN: "⚪ Нет данных",
 }
 
 HISTORY_SYMBOLS = {
-    ServerStatus.ONLINE: "G",
-    ServerStatus.DEGRADED: "Y",
-    ServerStatus.OFFLINE: "R",
-    ServerStatus.UNKNOWN: "N",
+    ServerStatus.ONLINE: "🟩",
+    ServerStatus.DEGRADED: "🟨",
+    ServerStatus.OFFLINE: "🟥",
+    ServerStatus.UNKNOWN: "⬜",
 }
 
 
 def _format_history_line(history) -> str:
-    raw = "".join(HISTORY_SYMBOLS[item.status] for item in history)
+    raw = [HISTORY_SYMBOLS[item.status] for item in history]
     if not raw:
-        return "NODATA"
-    return " ".join(raw[index : index + 8] for index in range(0, len(raw), 8))
+        return "⬜"
+    return " ".join("".join(raw[index : index + 8]) for index in range(0, len(raw), 8))
 
 
 def _status_text(status: ServerStatus) -> str:
@@ -51,22 +51,22 @@ def _safe_percent(value: float | None) -> str:
 
 def help_text() -> str:
     return (
-        "SwagMonitor commands\n\n"
-        "/status - total state of all monitors\n"
-        "/servers - list all servers\n"
-        "/server <name> - full details for one server\n"
-        "/ping <name> - run ICMP check now\n"
-        "/history <name> - show recent status timeline\n"
-        "/ports <name> - show TCP/HTTP/SSL checks for server\n"
-        "/alerts - last alert events\n"
-        "/mute <name> <duration> - mute alerts, example /mute vps1 2h\n"
-        "/unmute <name> - enable alerts again\n"
-        "/ssl <domain> - check certificate manually\n\n"
-        "How to use\n"
-        "1. Add servers in the web panel.\n"
-        "2. Wait for the first checks.\n"
-        "3. Use /status and /server <name> for quick diagnostics.\n\n"
-        "Legend for history: G=ok Y=degraded R=down N=no-data"
+        "🤖 Команды SwagMonitor\n\n"
+        "/status - общий статус всех мониторов\n"
+        "/servers - список серверов\n"
+        "/server <name> - подробности по одному серверу\n"
+        "/ping <name> - запустить ICMP-проверку прямо сейчас\n"
+        "/history <name> - последняя история статусов\n"
+        "/ports <name> - TCP, HTTP и SSL-проверки сервера\n"
+        "/alerts - последние события и алерты\n"
+        "/mute <name> <duration> - выключить уведомления, пример: /mute vps1 2h\n"
+        "/unmute <name> - снова включить уведомления\n"
+        "/ssl <domain> - вручную проверить сертификат\n\n"
+        "🧭 Как пользоваться\n"
+        "1. Сначала добавь серверы в веб-панели.\n"
+        "2. Подожди первые проверки или нажми ручной запуск.\n"
+        "3. Используй /status и /server <name> для быстрой диагностики.\n\n"
+        "История: 🟩 OK  🟨 деградация  🟥 сбой  ⬜ нет данных"
     )
 
 
@@ -84,46 +84,46 @@ async def status_summary_text() -> str:
     overview = await dashboard_service.build_overview()
     if not overview.servers:
         return (
-            "No monitors configured yet.\n\n"
-            "Open the web panel and add the first VPS:\n"
-            "- name\n"
-            "- IP or domain\n"
-            "- optional website URL\n"
-            "- optional ports like 22,80,443\n\n"
-            "Then use /servers or /server <name>."
+            "📭 Пока нет добавленных мониторов.\n\n"
+            "Открой веб-панель и добавь первый VPS:\n"
+            "- имя\n"
+            "- IP или домен\n"
+            "- при желании URL сайта\n"
+            "- при желании порты вроде 22, 80, 443\n\n"
+            "После этого используй /servers или /server <name>."
         )
 
     top_rows = "\n".join(
-        f"- {_status_text(item.status):<6} {item.name} | 24h {item.uptime_24h:.1f}% | loss {_safe_percent(item.last_packet_loss)}"
+        f"- {_status_text(item.status)} {item.name} | 24ч {item.uptime_24h:.1f}% | потери {_safe_percent(item.last_packet_loss)}"
         for item in overview.servers[:5]
     )
     return (
-        "Global status\n"
-        f"Total: {overview.summary.total}\n"
-        f"UP: {overview.summary.online}\n"
-        f"WARN: {overview.summary.degraded}\n"
-        f"DOWN: {overview.summary.offline}\n"
-        f"NODATA: {overview.summary.unknown}\n\n"
-        "Top monitors\n"
+        "📊 Общий статус\n"
+        f"Всего: {overview.summary.total}\n"
+        f"🟢 OK: {overview.summary.online}\n"
+        f"🟡 Деградация: {overview.summary.degraded}\n"
+        f"🔴 Недоступны: {overview.summary.offline}\n"
+        f"⚪ Нет данных: {overview.summary.unknown}\n\n"
+        "🖥 Кратко по серверам\n"
         f"{top_rows}\n\n"
-        "Use /server <name> for details."
+        "Подробности: /server <name>"
     )
 
 
 async def servers_text() -> str:
     servers = await dashboard_service.list_servers()
     if not servers:
-        return "No servers configured yet. Add the first one in the web panel."
-    lines = ["Servers"]
+        return "📭 Пока нет добавленных серверов. Добавь первый через веб-панель."
+    lines = ["🖥 Список серверов"]
     for item in servers:
         lines.append(
             f"- {item.name} [{_status_text(item.status)}]\n"
-            f"  target: {item.address}\n"
-            f"  uptime: 24h {item.uptime_24h:.1f}% | 7d {item.uptime_7d:.1f}% | 30d {item.uptime_30d:.1f}%\n"
-            f"  latency: {_safe_latency(item.last_latency_ms)} | loss: {_safe_percent(item.last_packet_loss)}\n"
-            f"  checks: {len(item.services)}"
+            f"  адрес: {item.address}\n"
+            f"  uptime: 24ч {item.uptime_24h:.1f}% | 7д {item.uptime_7d:.1f}% | 30д {item.uptime_30d:.1f}%\n"
+            f"  задержка: {_safe_latency(item.last_latency_ms)} | потери: {_safe_percent(item.last_packet_loss)}\n"
+            f"  проверок: {len(item.services)}"
         )
-    lines.append("\nOpen one monitor with /server <name>.")
+    lines.append("\nОткрыть один сервер: /server <name>")
     return "\n".join(lines)
 
 
@@ -138,23 +138,23 @@ async def server_detail_text(name: str) -> str | None:
 
     checks = "\n".join(
         f"- {check.name} [{_status_text(check.status)}]\n"
-        f"  type: {check.check_type.value} | target: {check.target}{f':{check.port}' if check.port else ''}\n"
-        f"  uptime: 24h {check.uptime_24h:.1f}% | 7d {check.uptime_7d:.1f}% | 30d {check.uptime_30d:.1f}%\n"
-        f"  response: {_safe_latency(check.last_response_ms)} | status code: {check.last_status_code or 'n/a'}\n"
-        f"  history: {_format_history_line(check.history)}"
+        f"  тип: {check.check_type.value} | цель: {check.target}{f':{check.port}' if check.port else ''}\n"
+        f"  uptime: 24ч {check.uptime_24h:.1f}% | 7д {check.uptime_7d:.1f}% | 30д {check.uptime_30d:.1f}%\n"
+        f"  ответ: {_safe_latency(check.last_response_ms)} | код: {check.last_status_code or 'n/a'}\n"
+        f"  история: {_format_history_line(check.history)}"
         for check in detail.services
-    ) or "- no service checks"
+    ) or "- сервисные проверки пока не добавлены"
 
     return (
-        f"{detail.name}\n"
-        f"Target: {detail.address}\n"
-        f"Status: {_status_text(detail.status)}\n"
-        f"Uptime: 24h {detail.uptime_24h:.1f}% | 7d {detail.uptime_7d:.1f}% | 30d {detail.uptime_30d:.1f}%\n"
-        f"Ping: avg {_safe_latency(detail.last_latency_ms)} | loss {_safe_percent(detail.last_packet_loss)} | jitter {_safe_latency(detail.last_jitter_ms)}\n"
-        f"Muted until: {detail.muted_until.isoformat() if detail.muted_until else 'active'}\n"
-        f"History: {_format_history_line(detail.history)}\n"
-        "Legend: G=ok Y=degraded R=down N=no-data\n\n"
-        f"Service checks\n{checks}"
+        f"🖥 {detail.name}\n"
+        f"Адрес: {detail.address}\n"
+        f"Статус: {_status_text(detail.status)}\n"
+        f"Uptime: 24ч {detail.uptime_24h:.1f}% | 7д {detail.uptime_7d:.1f}% | 30д {detail.uptime_30d:.1f}%\n"
+        f"Ping: средний {_safe_latency(detail.last_latency_ms)} | потери {_safe_percent(detail.last_packet_loss)} | jitter {_safe_latency(detail.last_jitter_ms)}\n"
+        f"Уведомления: {'приглушены до ' + detail.muted_until.isoformat() if detail.muted_until else 'активны'}\n"
+        f"История: {_format_history_line(detail.history)}\n"
+        "Легенда: 🟩 OK  🟨 деградация  🟥 сбой  ⬜ нет данных\n\n"
+        f"🔎 Проверки сервисов\n{checks}"
     )
 
 
@@ -164,8 +164,8 @@ async def alerts_text() -> str:
             await session.scalars(select(AlertEvent).order_by(AlertEvent.created_at.desc()).limit(10))
         ).all()
     if not events:
-        return "No alert events yet. When monitors start failing or recovering, alerts will appear here."
-    return "Last alert events\n" + "\n".join(
+        return "✅ Пока нет событий алертов. Когда появятся сбои или восстановления, они будут показаны здесь."
+    return "🚨 Последние события\n" + "\n".join(
         f"- [{event.created_at:%Y-%m-%d %H:%M}] {event.event_type.upper()} | {event.message}"
         for event in events
     )
@@ -178,13 +178,13 @@ async def history_text(name: str) -> str | None:
 
     history = await dashboard_service.list_server_history(server.id, limit=32)
     if not history:
-        return f"{server.name}: no checks yet."
+        return f"📭 {server.name}: пока ещё нет результатов проверок."
 
     strip = _format_history_line(history)
     return (
-        f"{server.name}\n"
-        f"Recent history: {strip}\n"
-        "Legend: G=ok Y=degraded R=down N=no-data"
+        f"🕓 {server.name}\n"
+        f"Последняя история: {strip}\n"
+        "Легенда: 🟩 OK  🟨 деградация  🟥 сбой  ⬜ нет данных"
     )
 
 
@@ -201,17 +201,17 @@ async def ports_text(name: str) -> str | None:
         check for check in detail.services if check.check_type.value in {"tcp", "http", "ssl"}
     ]
     if not relevant:
-        return f"{detail.name}: no port or web checks configured yet."
+        return f"📭 {detail.name}: пока нет HTTP, TCP или SSL-проверок."
 
-    lines = [f"{detail.name} service checks"]
+    lines = [f"🔌 Проверки сервисов для {detail.name}"]
     for check in relevant:
         target = check.target
         if check.port:
             target = f"{target}:{check.port}"
         lines.append(
             f"- {check.name} [{_status_text(check.status)}]\n"
-            f"  type: {check.check_type.value} | target: {target}\n"
-            f"  response: {_safe_latency(check.last_response_ms)} | code: {check.last_status_code or 'n/a'}"
+            f"  тип: {check.check_type.value} | цель: {target}\n"
+            f"  ответ: {_safe_latency(check.last_response_ms)} | код: {check.last_status_code or 'n/a'}"
         )
     return "\n".join(lines)
 
@@ -224,7 +224,7 @@ async def mute_text(name: str, duration: str) -> str | None:
         if server:
             server.muted_until = until
             await session.commit()
-            return f"Server {server.name} muted until {until.isoformat()}"
+            return f"🔕 Сервер {server.name}: уведомления выключены до {until.isoformat()}"
 
         service_check = await session.scalar(
             select(ServiceCheck).where(func.lower(ServiceCheck.name) == name.lower())
@@ -232,7 +232,7 @@ async def mute_text(name: str, duration: str) -> str | None:
         if service_check:
             service_check.muted_until = until
             await session.commit()
-            return f"Check {service_check.name} muted until {until.isoformat()}"
+            return f"🔕 Проверка {service_check.name}: уведомления выключены до {until.isoformat()}"
 
     return None
 
@@ -243,7 +243,7 @@ async def unmute_text(name: str) -> str | None:
         if server:
             server.muted_until = None
             await session.commit()
-            return f"Server {server.name} unmuted"
+            return f"🔔 Сервер {server.name}: уведомления снова включены"
 
         service_check = await session.scalar(
             select(ServiceCheck).where(func.lower(ServiceCheck.name) == name.lower())
@@ -251,7 +251,7 @@ async def unmute_text(name: str) -> str | None:
         if service_check:
             service_check.muted_until = None
             await session.commit()
-            return f"Check {service_check.name} unmuted"
+            return f"🔔 Проверка {service_check.name}: уведомления снова включены"
 
     return None
 
@@ -266,10 +266,10 @@ async def run_ping_text(name: str) -> str | None:
         return None
 
     return (
-        f"{refreshed.name}\n"
-        f"Status: {_status_text(refreshed.status)}\n"
-        f"Latency: {_safe_latency(refreshed.last_latency_ms)}\n"
-        f"Packet loss: {_safe_percent(refreshed.last_packet_loss)}\n"
+        f"📡 {refreshed.name}\n"
+        f"Статус: {_status_text(refreshed.status)}\n"
+        f"Задержка: {_safe_latency(refreshed.last_latency_ms)}\n"
+        f"Потери: {_safe_percent(refreshed.last_packet_loss)}\n"
         f"Jitter: {_safe_latency(refreshed.last_jitter_ms)}"
     )
 
@@ -277,7 +277,7 @@ async def run_ping_text(name: str) -> str | None:
 async def run_ssl_text(domain: str) -> str:
     result = await check_ssl_expiry(domain, 443, settings.http_timeout_seconds, settings.ssl_warning_days)
     return (
-        f"SSL {domain}\n"
-        f"Status: {_status_text(result.status)}\n"
+        f"🔐 SSL {domain}\n"
+        f"Статус: {_status_text(result.status)}\n"
         f"{result.message}"
     )

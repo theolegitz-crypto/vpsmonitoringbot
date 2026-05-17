@@ -47,8 +47,8 @@ export function MonitorTable({ rows, onRunServer, onRunService }) {
                 <div className="mt-1 text-xs text-slate-500">{row.currentSecondary}</div>
               </td>
               <td className="px-5 py-4">
-                <div className="min-w-[12rem]">
-                  <StatusStrip history={row.history} />
+                <div className="w-[15rem]">
+                  <StatusStrip history={row.history} maxVisible={24} compact align="end" />
                 </div>
               </td>
               <td className="px-5 py-4">
