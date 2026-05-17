@@ -76,6 +76,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  updateServer: (id, payload) =>
+    request(`/servers/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteServer: (id) =>
+    request(`/servers/${id}`, {
+      method: "DELETE",
+    }),
   runServerCheck: (id) =>
     request(`/servers/${id}/run-check`, {
       method: "POST",

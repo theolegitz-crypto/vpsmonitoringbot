@@ -12,6 +12,7 @@ from backend.app.schemas.server import MuteRequest, ServerCard, ServerCreate, Se
 from backend.app.schemas.service_check import ServiceCheckCreate, ServiceCheckRead, ServiceCheckUpdate
 from backend.app.services.dashboard import DashboardService
 from backend.app.services.monitoring import MonitoringService
+from backend.app.services.server_management import apply_server_updates
 from backend.app.utils.time import parse_duration
 
 
@@ -82,8 +83,14 @@ async def update_server(server_id: int, payload: ServerUpdate) -> ServerRead:
         if not server:
             raise HTTPException(status_code=404, detail="Server not found")
 
-        for field, value in payload.model_dump(exclude_unset=True).items():
-            setattr(server, field, value)
+        try:
+            await apply_server_updates(session, server, payload.model_dump(exclude_unset=True))
+        except ValueError as exc:
+            detail = str(exc)
+            raise HTTPException(
+                status_code=409 if "already exists" in detail.lower() else 400,
+                detail=detail,
+            ) from exc
 
         await session.commit()
         await session.refresh(server)

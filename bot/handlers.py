@@ -20,12 +20,16 @@ from bot.keyboards import (
     main_menu_keyboard,
     mute_duration_keyboard,
     server_actions_keyboard,
+    server_delete_confirm_keyboard,
+    server_edit_field_keyboard,
     server_picker_keyboard,
 )
 from bot.services import (
     alerts_text,
     create_server_from_bot,
+    delete_server_by_id,
     get_server_detail,
+    get_server_edit_field_meta,
     help_text,
     history_text,
     history_text_by_id,
@@ -45,8 +49,9 @@ from bot.services import (
     status_summary_text,
     unmute_text,
     unmute_text_by_id,
+    update_server_field_by_id,
 )
-from bot.states import AddServerStates
+from bot.states import AddServerStates, EditServerStates
 
 
 router = Router()
@@ -54,6 +59,7 @@ router = Router()
 
 ACTION_TITLES = {
     "detail": "🖥 Выбери сервер",
+    "edit": "✏️ Выбери сервер для редактирования",
     "ping": "📡 Выбери сервер для ping",
     "history": "🕓 Выбери сервер для истории",
     "ports": "🔌 Выбери сервер для проверки портов",
@@ -65,7 +71,7 @@ ACTION_TITLES = {
 async def send_server_picker(message: Message, action: str, page: int = 0) -> None:
     servers = await list_servers_for_picker()
     if not servers:
-        await message.answer("📭 Пока нет добавленных серверов. Сначала создай их в веб-панели.")
+        await message.answer("📭 Пока нет добавленных серверов. Сначала создай их в веб-панели или через /addserver.")
         return
     await message.answer(
         ACTION_TITLES[action],
@@ -106,8 +112,26 @@ async def start_add_server_flow(message: Message, state: FSMContext) -> None:
     await message.answer(
         "➕ Добавление сервера\n\n"
         "Шаг 1 из 6.\n"
-        "Введите имя сервера.\n"
+        "Введи имя сервера.\n"
         "Пример: `vps-germany-1`",
+        reply_markup=cancel_keyboard,
+        parse_mode="Markdown",
+    )
+
+
+async def start_edit_server_field_flow(
+    *,
+    message: Message,
+    state: FSMContext,
+    server_id: int,
+    field: str,
+) -> None:
+    meta = get_server_edit_field_meta(field)
+    await state.clear()
+    await state.set_state(EditServerStates.waiting_for_value)
+    await state.update_data(server_id=server_id, field=field)
+    await message.answer(
+        f"✏️ Редактирование поля: {meta['label']}\n\n{meta['prompt']}",
         reply_markup=cancel_keyboard,
         parse_mode="Markdown",
     )
@@ -120,7 +144,7 @@ async def cmd_start(message: Message) -> None:
     await message.answer(
         "👋 SwagMonitor готов к работе.\n\n"
         "Теперь серверы можно выбирать кнопками, без ручного ввода имени.\n"
-        "Открой «🖥 Серверы» или используй команды /server, /ping, /history, /ports.\n\n"
+        "Открой «🖥 Серверы» или используй команды /server, /editserver, /ping, /history, /ports.\n\n"
         "Если мониторинг ещё не настроен, сначала добавь сервер через /addserver или из веб-панели.",
         reply_markup=main_menu_keyboard,
     )
@@ -158,6 +182,13 @@ async def cmd_servers(message: Message) -> None:
         return
     await message.answer(await servers_text())
     await send_server_picker(message, "detail")
+
+
+@router.message(Command("editserver"))
+async def cmd_editserver(message: Message) -> None:
+    if not await ensure_message_allowed(message):
+        return
+    await send_server_picker(message, "edit")
 
 
 @router.message(Command("addserver"))
@@ -298,6 +329,7 @@ async def examples_button(message: Message) -> None:
         "/status\n"
         "/servers\n"
         "/server\n"
+        "/editserver\n"
         "/ping\n"
         "/history\n"
         "/ports\n"
@@ -433,8 +465,7 @@ async def add_server_ssl_step(message: Message, state: FSMContext) -> None:
 
     await state.clear()
     await message.answer(
-        f"✅ Сервер `{server.name}` добавлен.\n"
-        f"Создано проверок: {checks_added}",
+        f"✅ Сервер `{server.name}` добавлен.\nСоздано проверок: {checks_added}",
         reply_markup=main_menu_keyboard,
         parse_mode="Markdown",
     )
@@ -448,6 +479,46 @@ async def add_server_ssl_step(message: Message, state: FSMContext) -> None:
                 server.id,
                 is_muted=detail.muted_until is not None if detail else False,
             ),
+        )
+
+
+@router.message(EditServerStates.waiting_for_value)
+async def edit_server_value_step(message: Message, state: FSMContext) -> None:
+    if not await ensure_message_allowed(message):
+        return
+
+    data = await state.get_data()
+    server_id = data.get("server_id")
+    field = data.get("field")
+    if not server_id or not field:
+        await state.clear()
+        await message.answer("❌ Сессия редактирования потеряна. Открой сервер заново.", reply_markup=main_menu_keyboard)
+        return
+
+    try:
+        updated = await update_server_field_by_id(int(server_id), field, message.text)
+    except ValueError as exc:
+        await message.answer(str(exc))
+        return
+
+    if not updated:
+        await state.clear()
+        await message.answer("❌ Сервер не найден.", reply_markup=main_menu_keyboard)
+        return
+
+    meta = get_server_edit_field_meta(field)
+    await state.clear()
+    await message.answer(
+        f"✅ Поле «{meta['label']}» обновлено для сервера {updated.name}.",
+        reply_markup=main_menu_keyboard,
+    )
+
+    text = await server_detail_text_by_id(updated.id)
+    detail = await get_server_detail(updated.id)
+    if text and detail:
+        await message.answer(
+            text,
+            reply_markup=server_actions_keyboard(updated.id, is_muted=detail.muted_until is not None),
         )
 
 
@@ -481,6 +552,36 @@ async def picker_callback(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
+@router.callback_query(F.data.startswith("editfield:"))
+async def edit_field_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await ensure_callback_allowed(callback):
+        return
+    _, server_id_raw, field = callback.data.split(":")
+    await start_edit_server_field_flow(
+        message=callback.message,
+        state=state,
+        server_id=int(server_id_raw),
+        field=field,
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("deleteconfirm:"))
+async def delete_confirm_callback(callback: CallbackQuery) -> None:
+    if not await ensure_callback_allowed(callback):
+        return
+    _, server_id_raw = callback.data.split(":")
+    server_id = int(server_id_raw)
+    deleted_name = await delete_server_by_id(server_id)
+    if not deleted_name:
+        await callback.answer("Сервер не найден", show_alert=True)
+        return
+    await callback.message.edit_text(
+        f"🗑 Сервер {deleted_name} удалён.\n\nОткрой /servers, чтобы выбрать другой сервер.",
+    )
+    await callback.answer("Сервер удалён")
+
+
 @router.callback_query(F.data.startswith("server:"))
 async def server_action_callback(callback: CallbackQuery) -> None:
     if not await ensure_callback_allowed(callback):
@@ -490,6 +591,24 @@ async def server_action_callback(callback: CallbackQuery) -> None:
 
     if action == "detail":
         await render_server_detail(callback, server_id)
+    elif action == "editprompt":
+        detail = await get_server_detail(server_id)
+        if not detail:
+            await callback.answer("Сервер не найден", show_alert=True)
+            return
+        await callback.message.edit_text(
+            f"✏️ Что изменить у сервера {detail.name}?",
+            reply_markup=server_edit_field_keyboard(server_id),
+        )
+    elif action == "deleteprompt":
+        detail = await get_server_detail(server_id)
+        if not detail:
+            await callback.answer("Сервер не найден", show_alert=True)
+            return
+        await callback.message.edit_text(
+            f"🗑 Удалить сервер {detail.name} и все связанные проверки?",
+            reply_markup=server_delete_confirm_keyboard(server_id),
+        )
     elif action == "ping":
         text = await run_ping_text_by_id(server_id)
         if not text:
@@ -498,10 +617,7 @@ async def server_action_callback(callback: CallbackQuery) -> None:
         detail = await get_server_detail(server_id)
         await callback.message.edit_text(
             text,
-            reply_markup=server_actions_keyboard(
-                server_id,
-                is_muted=detail.muted_until is not None if detail else False,
-            ),
+            reply_markup=server_actions_keyboard(server_id, is_muted=detail.muted_until is not None if detail else False),
         )
     elif action == "history":
         text = await history_text_by_id(server_id)
@@ -511,10 +627,7 @@ async def server_action_callback(callback: CallbackQuery) -> None:
         detail = await get_server_detail(server_id)
         await callback.message.edit_text(
             text,
-            reply_markup=server_actions_keyboard(
-                server_id,
-                is_muted=detail.muted_until is not None if detail else False,
-            ),
+            reply_markup=server_actions_keyboard(server_id, is_muted=detail.muted_until is not None if detail else False),
         )
     elif action == "ports":
         text = await ports_text_by_id(server_id)
@@ -524,10 +637,7 @@ async def server_action_callback(callback: CallbackQuery) -> None:
         detail = await get_server_detail(server_id)
         await callback.message.edit_text(
             text,
-            reply_markup=server_actions_keyboard(
-                server_id,
-                is_muted=detail.muted_until is not None if detail else False,
-            ),
+            reply_markup=server_actions_keyboard(server_id, is_muted=detail.muted_until is not None if detail else False),
         )
     elif action in {"mute", "muteprompt"}:
         detail = await get_server_detail(server_id)

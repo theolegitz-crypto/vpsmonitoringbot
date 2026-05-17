@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, BellOff, BellRing, ShieldAlert } from "lucide-react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { ArrowLeft, BellOff, BellRing, Pencil, ShieldAlert, Trash2 } from "lucide-react";
 
 import { api } from "../api/client";
 import { MetricChart } from "../components/MetricChart";
+import { ServerSettingsForm } from "../components/ServerSettingsForm";
 import { StatusBadge } from "../components/StatusBadge";
 import { StatusStrip } from "../components/StatusStrip";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
@@ -12,11 +13,14 @@ import { formatDate, formatLatency, formatPercent } from "../lib/format";
 
 export function ServerPage() {
   const { serverId } = useParams();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [server, setServer] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [lastClientRefreshAt, setLastClientRefreshAt] = useState(null);
+  const isEditing = searchParams.get("edit") === "1";
 
   async function loadServer({ silent = false } = {}) {
     try {
@@ -65,6 +69,42 @@ export function ServerPage() {
     }
   }
 
+  async function handleSaveSettings(payload) {
+    if (!server) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.updateServer(server.id, payload);
+      await loadServer();
+      setSearchParams({}, { replace: true });
+    } catch (saveError) {
+      setError(saveError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteServer() {
+    if (!server) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete server "${server.name}" and all attached checks?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setBusy(true);
+    try {
+      await api.deleteServer(server.id);
+      navigate("/");
+    } catch (deleteError) {
+      setError(deleteError.message);
+      setBusy(false);
+    }
+  }
+
   if (!server) {
     return <div className="py-24 text-center text-slate-300">{error || "Loading server..."}</div>;
   }
@@ -89,15 +129,35 @@ export function ServerPage() {
             <p className="mt-3 font-mono text-sm text-slate-400">{server.address}</p>
             <p className="mt-3 max-w-2xl text-slate-300">{server.description || "No description provided."}</p>
           </div>
-          <button
-            type="button"
-            onClick={handleMuteToggle}
-            disabled={busy}
-            className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-medium transition hover:bg-white/10 disabled:opacity-60"
-          >
-            {server.muted_until ? <BellRing size={16} /> : <BellOff size={16} />}
-            {server.muted_until ? "Unmute alerts" : "Mute for 2 hours"}
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setSearchParams({ edit: "1" }, { replace: true })}
+              disabled={busy}
+              className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-medium transition hover:bg-white/10 disabled:opacity-60"
+            >
+              <Pencil size={16} />
+              Edit server
+            </button>
+            <button
+              type="button"
+              onClick={handleMuteToggle}
+              disabled={busy}
+              className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-medium transition hover:bg-white/10 disabled:opacity-60"
+            >
+              {server.muted_until ? <BellRing size={16} /> : <BellOff size={16} />}
+              {server.muted_until ? "Unmute alerts" : "Mute for 2 hours"}
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteServer}
+              disabled={busy}
+              className="inline-flex items-center gap-3 rounded-full border border-danger/30 bg-danger/10 px-5 py-3 text-sm font-medium text-red-100 transition hover:bg-danger/20 disabled:opacity-60"
+            >
+              <Trash2 size={16} />
+              Delete server
+            </button>
+          </div>
         </div>
 
         <div className="mt-5 rounded-3xl border border-white/8 bg-white/5 px-4 py-3 text-sm text-slate-300">
@@ -144,6 +204,16 @@ export function ServerPage() {
           </div>
         </div>
       </section>
+
+      {isEditing ? (
+        <ServerSettingsForm
+          key={`${server.id}-${server.updated_at || "initial"}`}
+          server={server}
+          busy={busy}
+          onSubmit={handleSaveSettings}
+          onCancel={() => setSearchParams({}, { replace: true })}
+        />
+      ) : null}
 
       <section className="rounded-[2rem] border border-white/8 bg-panel/88 p-6 shadow-glow">
         <div className="mb-4 flex items-center justify-between">

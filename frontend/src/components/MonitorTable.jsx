@@ -1,11 +1,11 @@
 import { Link } from "react-router-dom";
-import { Play, Search } from "lucide-react";
+import { Pencil, Play, Search, Trash2 } from "lucide-react";
 
 import { formatPercent, statusTone } from "../lib/format";
 import { StatusStrip } from "./StatusStrip";
 
 
-export function MonitorTable({ rows, onRunServer, onRunService }) {
+export function MonitorTable({ rows, onRunServer, onRunService, onDeleteServer }) {
   return (
     <div className="overflow-x-auto rounded-[2rem] border border-white/8 bg-panel/88 shadow-glow">
       <table className="min-w-[1080px] w-full border-collapse text-sm">
@@ -52,7 +52,7 @@ export function MonitorTable({ rows, onRunServer, onRunService }) {
                 </div>
               </td>
               <td className="px-5 py-4">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={() => (row.kind === "server" ? onRunServer(row.runId) : onRunService(row.runId))}
@@ -68,6 +68,25 @@ export function MonitorTable({ rows, onRunServer, onRunService }) {
                     <Search size={14} />
                     Open
                   </Link>
+                  {row.kind === "server" ? (
+                    <Link
+                      to={`${row.link}?edit=1`}
+                      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/10"
+                    >
+                      <Pencil size={14} />
+                      Edit
+                    </Link>
+                  ) : null}
+                  {row.kind === "server" ? (
+                    <button
+                      type="button"
+                      onClick={() => onDeleteServer?.(row.runId, row.name)}
+                      className="inline-flex items-center gap-2 rounded-full border border-danger/30 bg-danger/10 px-3 py-2 text-xs font-medium text-red-100 transition hover:bg-danger/20"
+                    >
+                      <Trash2 size={14} />
+                      Delete
+                    </button>
+                  ) : null}
                 </div>
               </td>
             </tr>

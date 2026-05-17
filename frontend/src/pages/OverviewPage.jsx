@@ -134,6 +134,20 @@ export function OverviewPage({ currentUser }) {
     }
   }
 
+  async function handleDeleteServer(serverId, serverName) {
+    const confirmed = window.confirm(`Delete server "${serverName}" and all attached checks?`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await api.deleteServer(serverId);
+      await loadOverview();
+    } catch (deleteError) {
+      setError(deleteError.message);
+    }
+  }
+
   const rows = useMemo(() => buildMonitorRows(overview?.servers || []), [overview]);
 
   if (loading) {
@@ -195,6 +209,7 @@ export function OverviewPage({ currentUser }) {
                 rows={rows}
                 onRunServer={handleRefreshServer}
                 onRunService={handleRefreshService}
+                onDeleteServer={handleDeleteServer}
               />
             ) : (
               <div className="rounded-3xl border border-dashed border-white/10 bg-white/5 p-6 text-slate-400">

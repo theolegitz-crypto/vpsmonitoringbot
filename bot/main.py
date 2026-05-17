@@ -18,6 +18,7 @@ BOT_COMMANDS = [
     BotCommand(command="status", description="Общий статус мониторинга"),
     BotCommand(command="servers", description="Список серверов и кнопки выбора"),
     BotCommand(command="server", description="Выбрать сервер и открыть детали"),
+    BotCommand(command="editserver", description="Выбрать сервер и изменить настройки"),
     BotCommand(command="ping", description="Выбрать сервер и проверить ping"),
     BotCommand(command="history", description="Выбрать сервер и открыть историю"),
     BotCommand(command="ports", description="Выбрать сервер и показать порты"),

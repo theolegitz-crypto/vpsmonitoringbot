@@ -7,6 +7,7 @@ from backend.app.db.session import AsyncSessionLocal
 from backend.app.models import AlertEvent, CheckType, Server, ServerStatus, ServiceCheck
 from backend.app.services.dashboard import DashboardService
 from backend.app.services.monitoring import MonitoringService
+from backend.app.services.server_management import apply_server_updates
 from backend.app.utils.service_checks import check_ssl_expiry
 from backend.app.utils.time import parse_duration
 
@@ -27,6 +28,58 @@ HISTORY_SYMBOLS = {
     ServerStatus.DEGRADED: "🟨",
     ServerStatus.OFFLINE: "🟥",
     ServerStatus.UNKNOWN: "⬜",
+}
+
+SERVER_EDIT_FIELD_META = {
+    "name": {
+        "label": "имя",
+        "prompt": "Введи новое имя сервера.",
+        "type": "text",
+    },
+    "address": {
+        "label": "адрес",
+        "prompt": "Введи новый IP или домен сервера.",
+        "type": "text",
+    },
+    "description": {
+        "label": "описание",
+        "prompt": "Введи новое описание или отправь `-`, чтобы очистить поле.",
+        "type": "optional_text",
+    },
+    "check_interval_seconds": {
+        "label": "интервал проверки",
+        "prompt": "Введи новый интервал проверки в секундах, например `60`.",
+        "type": "int",
+        "min": 10,
+    },
+    "consecutive_alert_threshold": {
+        "label": "порог подряд идущих ошибок",
+        "prompt": "Введи число неудачных проверок подряд перед алертом, например `3`.",
+        "type": "int",
+        "min": 1,
+    },
+    "latency_warning_ms": {
+        "label": "latency warning",
+        "prompt": "Введи warning-порог задержки в миллисекундах, например `150`.",
+        "type": "float",
+        "min": 1,
+    },
+    "latency_critical_ms": {
+        "label": "latency critical",
+        "prompt": "Введи critical-порог задержки в миллисекундах, например `400`.",
+        "type": "float",
+        "min": 1,
+    },
+    "packet_loss_warning": {
+        "label": "packet loss warning",
+        "prompt": "Введи warning-порог потерь пакетов в процентах, например `5`.",
+        "type": "percent",
+    },
+    "packet_loss_critical": {
+        "label": "packet loss critical",
+        "prompt": "Введи critical-порог потерь пакетов в процентах, например `20`.",
+        "type": "percent",
+    },
 }
 
 
@@ -87,15 +140,61 @@ def help_text() -> str:
         "/history - выбрать сервер и открыть историю\n"
         "/ports - выбрать сервер и посмотреть TCP, HTTP и SSL\n"
         "/alerts - последние события и алерты\n"
-        "/mute - выбрать сервер и приглушить уведомления\n"
-        "/unmute - выбрать сервер и включить уведомления\n"
+        "/addserver - добавить сервер прямо через Telegram\n"
+        "/mute - приглушить уведомления для сервера\n"
+        "/unmute - снова включить уведомления\n"
+        "/chatinfo - показать chat id и topic id\n"
         "/ssl <domain> - вручную проверить сертификат\n\n"
         "🧭 Как пользоваться\n"
-        "1. Добавь серверы в веб-панели.\n"
+        "1. Добавь сервер через веб-панель или /addserver.\n"
         "2. Открой /servers или нажми кнопку «Серверы».\n"
-        "3. Выбирай нужный сервер кнопками, без ручного ввода имени.\n\n"
+        "3. Выбирай нужный сервер кнопками, без ручного ввода имени.\n"
+        "4. В карточке сервера доступны ping, история, порты, редактирование и удаление.\n\n"
         "История: 🟩 OK  🟨 деградация  🟥 сбой  ⬜ нет данных"
     )
+
+
+def get_server_edit_field_meta(field: str) -> dict:
+    meta = SERVER_EDIT_FIELD_META.get(field)
+    if not meta:
+        raise ValueError("Неизвестное поле для редактирования")
+    return meta
+
+
+def _parse_server_field_value(field: str, raw_value: str):
+    meta = get_server_edit_field_meta(field)
+    value = raw_value.strip()
+
+    if meta["type"] == "text":
+        if len(value) < 2:
+            raise ValueError("Значение слишком короткое.")
+        return value
+
+    if meta["type"] == "optional_text":
+        return normalize_optional_text(value)
+
+    if meta["type"] == "int":
+        if not value.isdigit():
+            raise ValueError("Нужно ввести целое число.")
+        parsed = int(value)
+        if parsed < meta["min"]:
+            raise ValueError(f"Значение должно быть не меньше {meta['min']}.")
+        return parsed
+
+    normalized = value.replace(",", ".")
+    try:
+        parsed = float(normalized)
+    except ValueError as exc:
+        raise ValueError("Нужно ввести число.") from exc
+
+    if meta["type"] == "percent":
+        if parsed < 0 or parsed > 100:
+            raise ValueError("Процент должен быть в диапазоне 0-100.")
+        return parsed
+
+    if parsed < meta["min"]:
+        raise ValueError(f"Значение должно быть не меньше {meta['min']}.")
+    return parsed
 
 
 async def list_servers_for_picker():
@@ -194,16 +293,16 @@ async def find_server_by_id(server_id: int) -> Server | None:
         return await session.get(Server, server_id)
 
 
+async def get_server_detail(server_id: int):
+    return await dashboard_service.build_server_detail(server_id)
+
+
 async def status_summary_text() -> str:
     overview = await dashboard_service.build_overview()
     if not overview.servers:
         return (
             "📭 Пока нет добавленных мониторов.\n\n"
-            "Открой веб-панель и добавь первый VPS:\n"
-            "- имя\n"
-            "- IP или домен\n"
-            "- при желании сайт и порты\n\n"
-            "После этого нажми «🖥 Серверы»."
+            "Открой веб-панель или используй /addserver, чтобы создать первый VPS."
         )
 
     top_rows = "\n".join(
@@ -226,15 +325,11 @@ async def status_summary_text() -> str:
 async def servers_text() -> str:
     servers = await dashboard_service.list_servers()
     if not servers:
-        return "📭 Пока нет добавленных серверов. Добавь первый через веб-панель."
+        return "📭 Пока нет добавленных серверов. Добавь первый через веб-панель или /addserver."
     return (
         "🖥 Список серверов готов.\n"
         "Нажми на нужный сервер в кнопках ниже, чтобы открыть детали."
     )
-
-
-async def get_server_detail(server_id: int):
-    return await dashboard_service.build_server_detail(server_id)
 
 
 async def server_detail_text_by_id(server_id: int) -> str | None:
@@ -431,3 +526,29 @@ async def run_ssl_text(domain: str) -> str:
         f"Статус: {_status_text(result.status)}\n"
         f"{result.message}"
     )
+
+
+async def update_server_field_by_id(server_id: int, field: str, raw_value: str) -> Server | None:
+    parsed_value = _parse_server_field_value(field, raw_value)
+
+    async with AsyncSessionLocal() as session:
+        server = await session.get(Server, server_id)
+        if not server:
+            return None
+
+        await apply_server_updates(session, server, {field: parsed_value})
+        await session.commit()
+        await session.refresh(server)
+        return server
+
+
+async def delete_server_by_id(server_id: int) -> str | None:
+    async with AsyncSessionLocal() as session:
+        server = await session.get(Server, server_id)
+        if not server:
+            return None
+
+        name = server.name
+        await session.delete(server)
+        await session.commit()
+        return name

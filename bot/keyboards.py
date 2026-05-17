@@ -112,7 +112,11 @@ def server_actions_keyboard(server_id: int, is_muted: bool) -> InlineKeyboardMar
             ],
             [
                 InlineKeyboardButton(text="🔌 Порты", callback_data=f"server:ports:{server_id}"),
+                InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"server:editprompt:{server_id}"),
+            ],
+            [
                 mute_button,
+                InlineKeyboardButton(text="🗑 Удалить", callback_data=f"server:deleteprompt:{server_id}"),
             ],
             [
                 InlineKeyboardButton(
@@ -120,6 +124,49 @@ def server_actions_keyboard(server_id: int, is_muted: bool) -> InlineKeyboardMar
                     callback_data="picker:detail:0",
                 )
             ],
+        ]
+    )
+
+
+def server_edit_field_keyboard(server_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Имя", callback_data=f"editfield:{server_id}:name"),
+                InlineKeyboardButton(text="Адрес", callback_data=f"editfield:{server_id}:address"),
+            ],
+            [
+                InlineKeyboardButton(text="Описание", callback_data=f"editfield:{server_id}:description"),
+                InlineKeyboardButton(text="Интервал", callback_data=f"editfield:{server_id}:check_interval_seconds"),
+            ],
+            [
+                InlineKeyboardButton(text="Alert порог", callback_data=f"editfield:{server_id}:consecutive_alert_threshold"),
+                InlineKeyboardButton(text="Latency warn", callback_data=f"editfield:{server_id}:latency_warning_ms"),
+            ],
+            [
+                InlineKeyboardButton(text="Latency crit", callback_data=f"editfield:{server_id}:latency_critical_ms"),
+                InlineKeyboardButton(text="Loss warn", callback_data=f"editfield:{server_id}:packet_loss_warning"),
+            ],
+            [
+                InlineKeyboardButton(text="Loss crit", callback_data=f"editfield:{server_id}:packet_loss_critical"),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад к серверу",
+                    callback_data=f"server:detail:{server_id}",
+                )
+            ],
+        ]
+    )
+
+
+def server_delete_confirm_keyboard(server_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🗑 Да, удалить", callback_data=f"deleteconfirm:{server_id}"),
+                InlineKeyboardButton(text="Отмена", callback_data=f"server:detail:{server_id}"),
+            ]
         ]
     )
 
