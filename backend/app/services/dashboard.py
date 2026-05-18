@@ -130,6 +130,14 @@ class DashboardService:
                 .where(SpeedTestResult.server_id == server_id)
                 .order_by(SpeedTestResult.created_at.desc())
             )
+            speed_test_history = (
+                await session.scalars(
+                    select(SpeedTestResult)
+                    .where(SpeedTestResult.server_id == server_id)
+                    .order_by(SpeedTestResult.created_at.desc())
+                    .limit(10)
+                )
+            ).all()
 
             card = await self._build_server_card(session, server)
             return ServerDetail(
@@ -153,6 +161,9 @@ class DashboardService:
                 latest_speed_test=(
                     SpeedTestRead.model_validate(latest_speed_test) if latest_speed_test else None
                 ),
+                speed_test_history=[
+                    SpeedTestRead.model_validate(item) for item in speed_test_history
+                ],
             )
 
     async def list_servers(self) -> list[ServerCard]:

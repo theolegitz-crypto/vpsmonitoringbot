@@ -66,6 +66,16 @@ class Settings(BaseSettings):
     container_metrics_retention_days: int = 14
     diagnostic_retention_days: int = 14
     speed_test_retention_days: int = 30
+    speed_test_degradation_alert_enabled: bool = True
+    speed_test_baseline_samples: int = 5
+    speed_test_baseline_min_samples: int = 3
+    speed_test_baseline_window_hours: int = 168
+    speed_test_warning_ratio: float = 0.7
+    speed_test_critical_ratio: float = 0.5
+    speed_test_ping_warning_multiplier: float = 1.5
+    speed_test_ping_critical_multiplier: float = 2.0
+    speed_test_alert_cooldown_minutes: int = 180
+    speed_test_recovery_window_hours: int = 24
     alert_events_retention_days: int = 90
     resolved_incident_retention_days: int = 90
 

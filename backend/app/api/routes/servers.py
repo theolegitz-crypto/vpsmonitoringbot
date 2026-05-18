@@ -155,6 +155,24 @@ async def queue_speed_test(server_id: int) -> SpeedTestQueueResponse:
     )
 
 
+@router.get("/{server_id}/speed-test/latest", response_model=SpeedTestRead | None)
+async def latest_speed_test(server_id: int) -> SpeedTestRead | None:
+    try:
+        speed_test = await speed_test_service.latest_for_server(server_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return SpeedTestRead.model_validate(speed_test) if speed_test else None
+
+
+@router.get("/{server_id}/speed-tests", response_model=list[SpeedTestRead])
+async def speed_test_history(server_id: int, limit: int = 10) -> list[SpeedTestRead]:
+    try:
+        items = await speed_test_service.list_for_server(server_id, limit=limit)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return [SpeedTestRead.model_validate(item) for item in items]
+
+
 @router.get("/{server_id}/history", response_model=list[HistoryPoint])
 async def server_history(server_id: int, limit: int = 48) -> list[HistoryPoint]:
     return await dashboard_service.list_server_history(server_id, limit)

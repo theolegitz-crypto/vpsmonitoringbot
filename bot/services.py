@@ -236,6 +236,23 @@ def _format_speed_test_block(speed_test) -> str:
     )
 
 
+def _format_speed_test_history_entry(speed_test) -> str:
+    created_at = speed_test.completed_at or speed_test.started_at or speed_test.created_at
+    status = speed_test.status.value.upper()
+    if speed_test.status == SpeedTestStatus.FAILED:
+        return (
+            f"- [{created_at:%Y-%m-%d %H:%M}] {status} | "
+            f"Ошибка: {speed_test.error or 'unknown error'}"
+        )
+
+    return (
+        f"- [{created_at:%Y-%m-%d %H:%M}] {status} | "
+        f"↓ {_safe_speed(speed_test.download_mbps)} | "
+        f"↑ {_safe_speed(speed_test.upload_mbps)} | "
+        f"ping {_safe_latency(speed_test.ping_ms)}"
+    )
+
+
 async def list_servers_for_picker():
     return await dashboard_service.list_servers()
 
@@ -492,6 +509,41 @@ async def speed_test_text(name: str) -> str | None:
     if not server:
         return None
     return await speed_test_text_by_id(server.id)
+
+
+async def latest_speed_test_text_by_id(server_id: int) -> str | None:
+    detail = await get_server_detail(server_id)
+    if not detail:
+        return None
+    return f"📶 Последний speed test для {detail.name}\n\n{_format_speed_test_block(detail.latest_speed_test)}"
+
+
+async def latest_speed_test_text(name: str) -> str | None:
+    server = await find_server_by_name(name)
+    if not server:
+        return None
+    return await latest_speed_test_text_by_id(server.id)
+
+
+async def speed_test_history_text_by_id(server_id: int, limit: int = 6) -> str | None:
+    server = await find_server_by_id(server_id)
+    if not server:
+        return None
+
+    history = await speed_test_service.list_for_server(server.id, limit=limit)
+    if not history:
+        return f"📭 {server.name}: speed test ещё не запускался."
+
+    lines = [f"📈 История speed test для {server.name}"]
+    lines.extend(_format_speed_test_history_entry(item) for item in history)
+    return "\n".join(lines)
+
+
+async def speed_test_history_text(name: str, limit: int = 6) -> str | None:
+    server = await find_server_by_name(name)
+    if not server:
+        return None
+    return await speed_test_history_text_by_id(server.id, limit=limit)
 
 
 async def mute_text_by_id(server_id: int, duration: str) -> str | None:

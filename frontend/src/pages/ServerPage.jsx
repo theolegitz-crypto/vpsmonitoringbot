@@ -144,12 +144,27 @@ export function ServerPage() {
     }
   }
 
+  async function handleShowLatestSpeedTest() {
+    if (!server) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await loadServer({ silent: true });
+    } catch (refreshError) {
+      setError(refreshError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!server) {
     return <div className="py-24 text-center text-slate-300">{error || "Loading server..."}</div>;
   }
 
   const latestAgentMetric = server.latest_agent_metric;
   const latestSpeedTest = server.latest_speed_test;
+  const speedHistory = server.speed_test_history || [];
 
   return (
     <div className="space-y-8">
@@ -307,14 +322,24 @@ export function ServerPage() {
             <h2 className="mt-2 text-2xl font-bold">Server bandwidth check</h2>
             <p className="mt-2 text-sm text-slate-400">Runs on the VPS agent, not in the browser, so it measures the server itself.</p>
           </div>
-          <button
-            type="button"
-            onClick={handleRunSpeedTest}
-            disabled={busy}
-            className="inline-flex items-center gap-3 rounded-full border border-accent/30 bg-accent/10 px-5 py-3 text-sm font-medium text-white transition hover:bg-accent/20 disabled:opacity-60"
-          >
-            Queue speed test
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={handleShowLatestSpeedTest}
+              disabled={busy}
+              className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-medium text-white transition hover:bg-white/10 disabled:opacity-60"
+            >
+              Show latest result
+            </button>
+            <button
+              type="button"
+              onClick={handleRunSpeedTest}
+              disabled={busy}
+              className="inline-flex items-center gap-3 rounded-full border border-accent/30 bg-accent/10 px-5 py-3 text-sm font-medium text-white transition hover:bg-accent/20 disabled:opacity-60"
+            >
+              Queue speed test
+            </button>
+          </div>
         </div>
 
         {latestSpeedTest ? (
@@ -354,6 +379,53 @@ export function ServerPage() {
             Speed test has not been run yet. Queue one to measure download, upload and latency directly from the VPS agent.
           </div>
         )}
+
+        <div className="mt-6">
+          <div className="mb-3">
+            <p className="text-xs uppercase tracking-[0.24em] text-slate-400">History</p>
+            <h3 className="mt-2 text-xl font-semibold">Recent speed tests</h3>
+          </div>
+          {speedHistory.length ? (
+            <div className="overflow-x-auto">
+              <table className="min-w-[760px] w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-white/8 text-left text-xs uppercase tracking-[0.18em] text-slate-400">
+                    <th className="px-4 py-3 font-medium">Requested</th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-4 py-3 font-medium">Download</th>
+                    <th className="px-4 py-3 font-medium">Upload</th>
+                    <th className="px-4 py-3 font-medium">Ping</th>
+                    <th className="px-4 py-3 font-medium">Provider</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {speedHistory.map((item) => (
+                    <tr key={item.id} className="border-b border-white/6 last:border-b-0">
+                      <td className="px-4 py-4 text-slate-200">{formatDate(item.completed_at || item.started_at || item.created_at)}</td>
+                      <td className="px-4 py-4">
+                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs uppercase tracking-[0.18em] text-slate-200">
+                          {item.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-slate-200">{formatSpeed(item.download_mbps)}</td>
+                      <td className="px-4 py-4 text-slate-200">{formatSpeed(item.upload_mbps)}</td>
+                      <td className="px-4 py-4 text-slate-200">{formatLatency(item.ping_ms)}</td>
+                      <td className="px-4 py-4 text-slate-300">
+                        <div>{item.provider_name || "n/a"}</div>
+                        <div className="mt-1 text-xs text-slate-500">{item.provider_location || "n/a"}</div>
+                        {item.error ? <div className="mt-1 text-xs text-red-200">{item.error}</div> : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="rounded-3xl bg-white/5 p-4 text-sm text-slate-400">
+              No previous speed tests stored yet.
+            </div>
+          )}
+        </div>
       </section>
 
       <section className="rounded-[2rem] border border-white/8 bg-panel/88 p-6 shadow-glow">

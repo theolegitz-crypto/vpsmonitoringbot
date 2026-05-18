@@ -28,9 +28,10 @@ from bot.services import (
     delete_server_by_id,
     get_server_detail,
     get_server_edit_field_meta,
-    help_text,
     history_text,
     history_text_by_id,
+    latest_speed_test_text,
+    latest_speed_test_text_by_id,
     list_servers_for_picker,
     mute_text,
     mute_text_by_id,
@@ -44,6 +45,8 @@ from bot.services import (
     server_detail_text,
     server_detail_text_by_id,
     servers_text,
+    speed_test_history_text,
+    speed_test_history_text_by_id,
     speed_test_text,
     speed_test_text_by_id,
     status_summary_text,
@@ -63,7 +66,9 @@ ACTION_TITLES = {
     "ping": "📡 Выбери сервер для ping",
     "history": "🕓 Выбери сервер для истории",
     "ports": "🔌 Выбери сервер для проверки портов",
-    "speed": "⚡ Выбери сервер для speed test",
+    "speed": "⚡ Выбери сервер для запуска speed test",
+    "speedlast": "📶 Выбери сервер, чтобы показать последний speed test",
+    "speedhistory": "📈 Выбери сервер для истории speed test",
     "mute": "🔕 Выбери сервер, чтобы приглушить уведомления",
     "unmute": "🔔 Выбери сервер, чтобы включить уведомления",
 }
@@ -79,10 +84,33 @@ EXAMPLES_TEXT = (
     "/history\n"
     "/ports\n"
     "/speed\n"
+    "/speedlast\n"
+    "/speedhistory\n"
     "/addserver\n"
     "/mute\n"
     "/chatinfo\n"
     "/ssl example.com"
+)
+
+
+HELP_TEXT = (
+    "🤖 Команды SwagMonitor\n\n"
+    "/status - общий статус всех мониторов\n"
+    "/servers - список серверов с выбором кнопками\n"
+    "/server - выбрать сервер и открыть подробности\n"
+    "/ping - выбрать сервер и запустить ping\n"
+    "/history - выбрать сервер и открыть историю доступности\n"
+    "/ports - выбрать сервер и посмотреть TCP, HTTP и SSL\n"
+    "/speed - выбрать сервер и запустить speed test через агент\n"
+    "/speedlast - показать последний speed test без новой постановки в очередь\n"
+    "/speedhistory - история speed test по серверу\n"
+    "/alerts - последние события и алерты\n"
+    "/addserver - добавить сервер прямо через Telegram\n"
+    "/mute - приглушить уведомления для сервера\n"
+    "/unmute - снова включить уведомления\n"
+    "/chatinfo - показать chat id и topic id\n"
+    "/ssl <domain> - вручную проверить сертификат\n\n"
+    "История: 🟩 OK  🟨 деградация  🟥 сбой  ⬜ нет данных"
 )
 
 
@@ -113,7 +141,10 @@ async def edit_server_picker(callback: CallbackQuery, action: str, page: int = 0
         return
     servers = await list_servers_for_picker()
     if not servers:
-        await callback.message.edit_text("📭 Пока нет добавленных серверов.", reply_markup=main_menu_inline_keyboard)
+        await callback.message.edit_text(
+            "📭 Пока нет добавленных серверов.",
+            reply_markup=main_menu_inline_keyboard,
+        )
         return
     await callback.message.edit_text(
         ACTION_TITLES[action],
@@ -132,6 +163,14 @@ async def render_server_detail(callback: CallbackQuery, server_id: int) -> None:
     await callback.message.edit_text(
         text,
         reply_markup=server_actions_keyboard(server_id, is_muted=detail.muted_until is not None),
+    )
+
+
+async def render_server_action_text(callback: CallbackQuery, server_id: int, text: str) -> None:
+    detail = await get_server_detail(server_id)
+    await callback.message.edit_text(
+        text,
+        reply_markup=server_actions_keyboard(server_id, is_muted=detail.muted_until is not None if detail else False),
     )
 
 
@@ -172,13 +211,13 @@ async def cmd_start(message: Message) -> None:
         return
     if message.chat.type != "private":
         await message.answer(
-            "Убираю старую reply-клавиатуру. В группах и topics теперь используем inline-кнопки.",
+            "Убираю старую reply-клавиатуру. В группах и topics используем inline-кнопки.",
             reply_markup=ReplyKeyboardRemove(),
         )
     await message.answer(
         "👋 SwagMonitor готов к работе.\n\n"
-        "В личке можно пользоваться кнопками меню, а в группах и topics меню теперь работает через inline-кнопки.\n"
-        "Открой «🖥 Серверы» или используй /server, /speed, /ping, /history, /ports.\n\n"
+        "В личке можно пользоваться кнопками меню, а в группах и topics меню работает через inline-кнопки.\n"
+        "Открой «🖥 Серверы» или используй /server, /speed, /speedlast, /speedhistory, /ping, /history, /ports.\n\n"
         "Если мониторинг ещё не настроен, сначала добавь сервер через /addserver или из веб-панели.",
         reply_markup=menu_markup_for(message),
     )
@@ -200,7 +239,7 @@ async def cmd_chatinfo(message: Message) -> None:
 async def cmd_help(message: Message) -> None:
     if not await ensure_message_allowed(message):
         return
-    await message.answer(help_text(), reply_markup=menu_markup_for(message))
+    await message.answer(HELP_TEXT, reply_markup=menu_markup_for(message))
 
 
 @router.message(Command("status"))
@@ -281,6 +320,28 @@ async def cmd_speed(message: Message, command: CommandObject) -> None:
         await message.answer(text or "❌ Сервер не найден")
         return
     await send_server_picker(message, "speed")
+
+
+@router.message(Command("speedlast"))
+async def cmd_speedlast(message: Message, command: CommandObject) -> None:
+    if not await ensure_message_allowed(message):
+        return
+    if command.args:
+        text = await latest_speed_test_text(command.args.strip())
+        await message.answer(text or "❌ Сервер не найден")
+        return
+    await send_server_picker(message, "speedlast")
+
+
+@router.message(Command("speedhistory"))
+async def cmd_speedhistory(message: Message, command: CommandObject) -> None:
+    if not await ensure_message_allowed(message):
+        return
+    if command.args:
+        text = await speed_test_history_text(command.args.strip())
+        await message.answer(text or "❌ Сервер не найден")
+        return
+    await send_server_picker(message, "speedhistory")
 
 
 @router.message(Command("mute"))
@@ -580,7 +641,7 @@ async def servers_callback(callback: CallbackQuery) -> None:
 async def help_callback(callback: CallbackQuery) -> None:
     if not await ensure_callback_allowed(callback):
         return
-    await callback.message.edit_text(help_text(), reply_markup=main_menu_inline_keyboard)
+    await callback.message.edit_text(HELP_TEXT, reply_markup=main_menu_inline_keyboard)
     await callback.answer()
 
 
@@ -681,41 +742,37 @@ async def server_action_callback(callback: CallbackQuery) -> None:
         if not text:
             await callback.answer("Сервер не найден", show_alert=True)
             return
-        detail = await get_server_detail(server_id)
-        await callback.message.edit_text(
-            text,
-            reply_markup=server_actions_keyboard(server_id, is_muted=detail.muted_until is not None if detail else False),
-        )
+        await render_server_action_text(callback, server_id, text)
     elif action == "history":
         text = await history_text_by_id(server_id)
         if not text:
             await callback.answer("Сервер не найден", show_alert=True)
             return
-        detail = await get_server_detail(server_id)
-        await callback.message.edit_text(
-            text,
-            reply_markup=server_actions_keyboard(server_id, is_muted=detail.muted_until is not None if detail else False),
-        )
+        await render_server_action_text(callback, server_id, text)
     elif action == "ports":
         text = await ports_text_by_id(server_id)
         if not text:
             await callback.answer("Сервер не найден", show_alert=True)
             return
-        detail = await get_server_detail(server_id)
-        await callback.message.edit_text(
-            text,
-            reply_markup=server_actions_keyboard(server_id, is_muted=detail.muted_until is not None if detail else False),
-        )
+        await render_server_action_text(callback, server_id, text)
     elif action == "speed":
         text = await speed_test_text_by_id(server_id)
         if not text:
             await callback.answer("Сервер не найден", show_alert=True)
             return
-        detail = await get_server_detail(server_id)
-        await callback.message.edit_text(
-            text,
-            reply_markup=server_actions_keyboard(server_id, is_muted=detail.muted_until is not None if detail else False),
-        )
+        await render_server_action_text(callback, server_id, text)
+    elif action == "speedlast":
+        text = await latest_speed_test_text_by_id(server_id)
+        if not text:
+            await callback.answer("Сервер не найден", show_alert=True)
+            return
+        await render_server_action_text(callback, server_id, text)
+    elif action == "speedhistory":
+        text = await speed_test_history_text_by_id(server_id)
+        if not text:
+            await callback.answer("Сервер не найден", show_alert=True)
+            return
+        await render_server_action_text(callback, server_id, text)
     elif action in {"mute", "muteprompt"}:
         detail = await get_server_detail(server_id)
         if not detail:

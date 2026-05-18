@@ -35,16 +35,16 @@ main_menu_keyboard = ReplyKeyboardMarkup(
 main_menu_inline_keyboard = InlineKeyboardMarkup(
     inline_keyboard=[
         [
-            InlineKeyboardButton(text="📊 Статус", callback_data="action:status"),
-            InlineKeyboardButton(text="🖥 Серверы", callback_data="action:servers"),
+            InlineKeyboardButton(text=STATUS_BUTTON, callback_data="action:status"),
+            InlineKeyboardButton(text=SERVERS_BUTTON, callback_data="action:servers"),
         ],
         [
-            InlineKeyboardButton(text="🚨 Алерты", callback_data="action:alerts"),
-            InlineKeyboardButton(text="➕ Добавить сервер", callback_data="action:addserver"),
+            InlineKeyboardButton(text=ALERTS_BUTTON, callback_data="action:alerts"),
+            InlineKeyboardButton(text=ADD_SERVER_BUTTON, callback_data="action:addserver"),
         ],
         [
-            InlineKeyboardButton(text="❓ Помощь", callback_data="action:help"),
-            InlineKeyboardButton(text="📚 Примеры", callback_data="action:examples"),
+            InlineKeyboardButton(text=HELP_BUTTON, callback_data="action:help"),
+            InlineKeyboardButton(text=EXAMPLES_BUTTON, callback_data="action:examples"),
         ],
     ]
 )
@@ -105,8 +105,8 @@ def server_picker_keyboard(servers: list, action: str, page: int = 0) -> InlineK
 
     rows.append(
         [
-            InlineKeyboardButton(text="📊 Статус", callback_data="action:status"),
-            InlineKeyboardButton(text="🚨 Алерты", callback_data="action:alerts"),
+            InlineKeyboardButton(text=STATUS_BUTTON, callback_data="action:status"),
+            InlineKeyboardButton(text=ALERTS_BUTTON, callback_data="action:alerts"),
         ]
     )
 
@@ -137,6 +137,10 @@ def server_actions_keyboard(server_id: int, is_muted: bool) -> InlineKeyboardMar
                 InlineKeyboardButton(text="⚡ Speed", callback_data=f"server:speed:{server_id}"),
             ],
             [
+                InlineKeyboardButton(text="📶 Последний speed", callback_data=f"server:speedlast:{server_id}"),
+                InlineKeyboardButton(text="📈 История speed", callback_data=f"server:speedhistory:{server_id}"),
+            ],
+            [
                 InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"server:editprompt:{server_id}"),
                 mute_button,
             ],
@@ -162,15 +166,30 @@ def server_edit_field_keyboard(server_id: int) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="Интервал", callback_data=f"editfield:{server_id}:check_interval_seconds"),
             ],
             [
-                InlineKeyboardButton(text="Alert порог", callback_data=f"editfield:{server_id}:consecutive_alert_threshold"),
-                InlineKeyboardButton(text="Latency warn", callback_data=f"editfield:{server_id}:latency_warning_ms"),
+                InlineKeyboardButton(
+                    text="Alert порог",
+                    callback_data=f"editfield:{server_id}:consecutive_alert_threshold",
+                ),
+                InlineKeyboardButton(
+                    text="Latency warn",
+                    callback_data=f"editfield:{server_id}:latency_warning_ms",
+                ),
             ],
             [
-                InlineKeyboardButton(text="Latency crit", callback_data=f"editfield:{server_id}:latency_critical_ms"),
-                InlineKeyboardButton(text="Loss warn", callback_data=f"editfield:{server_id}:packet_loss_warning"),
+                InlineKeyboardButton(
+                    text="Latency crit",
+                    callback_data=f"editfield:{server_id}:latency_critical_ms",
+                ),
+                InlineKeyboardButton(
+                    text="Loss warn",
+                    callback_data=f"editfield:{server_id}:packet_loss_warning",
+                ),
             ],
             [
-                InlineKeyboardButton(text="Loss crit", callback_data=f"editfield:{server_id}:packet_loss_critical"),
+                InlineKeyboardButton(
+                    text="Loss crit",
+                    callback_data=f"editfield:{server_id}:packet_loss_critical",
+                ),
             ],
             [
                 InlineKeyboardButton(text="⬅️ Назад к серверу", callback_data=f"server:detail:{server_id}"),

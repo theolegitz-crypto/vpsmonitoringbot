@@ -93,6 +93,8 @@ export const api = {
     request(`/servers/${id}/speed-test`, {
       method: "POST",
     }),
+  latestSpeedTest: (id) => request(`/servers/${id}/speed-test/latest`),
+  speedTestHistory: (id, limit = 10) => request(`/servers/${id}/speed-tests?limit=${limit}`),
   runServiceCheck: (id) =>
     request(`/servers/checks/${id}/run`, {
       method: "POST",

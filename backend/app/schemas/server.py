@@ -103,6 +103,7 @@ class ServerDetail(ServerRead):
     current_containers: list[ContainerMetricRead] = Field(default_factory=list)
     recent_diagnostics: list[DiagnosticSnapshotRead] = Field(default_factory=list)
     latest_speed_test: SpeedTestRead | None = None
+    speed_test_history: list[SpeedTestRead] = Field(default_factory=list)
 
 
 class OverviewSummary(BaseModel):
