@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, func
 from sqlalchemy import Enum as SqlEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -27,6 +27,9 @@ class Server(Base):
     packet_loss_critical: Mapped[float] = mapped_column(Float, default=20.0)
     check_interval_seconds: Mapped[int] = mapped_column(Integer, default=60)
     consecutive_alert_threshold: Mapped[int] = mapped_column(Integer, default=3)
+    speed_test_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    speed_test_interval_seconds: Mapped[int] = mapped_column(Integer, default=21600)
+    last_speed_test_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     muted_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)

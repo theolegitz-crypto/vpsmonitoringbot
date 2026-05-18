@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     ping_timeout_seconds: int = 1
     default_check_interval_seconds: int = 60
     default_consecutive_alert_threshold: int = 3
+    default_speed_test_enabled: bool = False
+    default_speed_test_interval_seconds: int = 21600
+    speed_test_scheduler_enabled: bool = True
     http_timeout_seconds: int = 5
     ssl_warning_days: int = 21
     failure_retry_enabled: bool = True

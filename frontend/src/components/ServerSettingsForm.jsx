@@ -12,6 +12,8 @@ function toFormState(server) {
     packet_loss_critical: String(server.packet_loss_critical ?? 20),
     check_interval_seconds: String(server.check_interval_seconds ?? 60),
     consecutive_alert_threshold: String(server.consecutive_alert_threshold ?? 3),
+    speed_test_enabled: Boolean(server.speed_test_enabled),
+    speed_test_interval_seconds: String(server.speed_test_interval_seconds ?? 21600),
   };
 }
 
@@ -24,8 +26,8 @@ export function ServerSettingsForm({ server, busy, onSubmit, onCancel }) {
   }, [server.id, server.updated_at]);
 
   function handleChange(event) {
-    const { name, value } = event.target;
-    setForm((current) => ({ ...current, [name]: value }));
+    const { name, value, type, checked } = event.target;
+    setForm((current) => ({ ...current, [name]: type === "checkbox" ? checked : value }));
   }
 
   async function handleSubmit(event) {
@@ -41,6 +43,8 @@ export function ServerSettingsForm({ server, busy, onSubmit, onCancel }) {
       packet_loss_critical: Number(form.packet_loss_critical),
       check_interval_seconds: Number(form.check_interval_seconds),
       consecutive_alert_threshold: Number(form.consecutive_alert_threshold),
+      speed_test_enabled: Boolean(form.speed_test_enabled),
+      speed_test_interval_seconds: Number(form.speed_test_interval_seconds),
     });
   }
 
@@ -168,6 +172,32 @@ export function ServerSettingsForm({ server, busy, onSubmit, onCancel }) {
             step="1"
             name="consecutive_alert_threshold"
             value={form.consecutive_alert_threshold}
+            onChange={handleChange}
+            className="rounded-2xl border border-white/10 bg-slate-950/30 px-4 py-3 text-sm outline-none transition focus:border-accent"
+          />
+        </label>
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/30 px-4 py-3 text-sm text-slate-200">
+          <input
+            type="checkbox"
+            name="speed_test_enabled"
+            checked={form.speed_test_enabled}
+            onChange={handleChange}
+            className="h-4 w-4 rounded border-white/20 bg-slate-950/30 text-accent focus:ring-accent"
+          />
+          <span>Enable scheduled speed tests</span>
+        </label>
+        <label className="grid gap-2 text-sm">
+          <span className="text-slate-300">Speed test interval, seconds</span>
+          <input
+            required
+            type="number"
+            min="300"
+            step="60"
+            name="speed_test_interval_seconds"
+            value={form.speed_test_interval_seconds}
             onChange={handleChange}
             className="rounded-2xl border border-white/10 bg-slate-950/30 px-4 py-3 text-sm outline-none transition focus:border-accent"
           />

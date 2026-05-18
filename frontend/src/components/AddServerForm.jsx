@@ -7,14 +7,16 @@ const initialState = {
   websiteUrl: "",
   tcpPorts: "22",
   sslDomain: "",
+  speedTestEnabled: false,
+  speedTestIntervalSeconds: "21600",
 };
 
 export function AddServerForm({ onSubmit, busy }) {
   const [form, setForm] = useState(initialState);
 
   function handleChange(event) {
-    const { name, value } = event.target;
-    setForm((current) => ({ ...current, [name]: value }));
+    const { name, value, type, checked } = event.target;
+    setForm((current) => ({ ...current, [name]: type === "checkbox" ? checked : value }));
   }
 
   async function handleSubmit(event) {
@@ -66,6 +68,8 @@ export function AddServerForm({ onSubmit, busy }) {
       name: form.name.trim(),
       address: form.address.trim(),
       description: form.description.trim(),
+      speed_test_enabled: Boolean(form.speedTestEnabled),
+      speed_test_interval_seconds: Number(form.speedTestIntervalSeconds),
       service_checks: serviceChecks,
     });
 
@@ -128,6 +132,26 @@ export function AddServerForm({ onSubmit, busy }) {
           placeholder="SSL domain, for example example.com"
           className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition focus:border-accent"
         />
+        <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
+          <input
+            type="checkbox"
+            name="speedTestEnabled"
+            checked={form.speedTestEnabled}
+            onChange={handleChange}
+            className="h-4 w-4 rounded border-white/20 bg-slate-950/30 text-accent focus:ring-accent"
+          />
+          <span>Enable scheduled speed tests</span>
+        </label>
+        <input
+          type="number"
+          min="300"
+          step="60"
+          name="speedTestIntervalSeconds"
+          value={form.speedTestIntervalSeconds}
+          onChange={handleChange}
+          placeholder="Speed test interval in seconds, for example 21600"
+          className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition focus:border-accent"
+        />
       </div>
 
       <div className="mt-4 rounded-2xl bg-white/5 p-4 text-xs leading-6 text-slate-400">
@@ -140,6 +164,8 @@ export function AddServerForm({ onSubmit, busy }) {
         - one TCP check per listed port
         <br />
         - one SSL check if SSL domain is filled
+        <br />
+        - optional scheduled speed tests if enabled and an agent is connected
         <br />
         <br />
         Tip: raw TCP checks go directly to the server address. Add port 80 or 443 only if that exact IP or hostname really accepts direct connections on those ports.

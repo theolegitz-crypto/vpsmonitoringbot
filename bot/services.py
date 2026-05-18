@@ -277,6 +277,8 @@ async def create_server_from_bot(
             description=description,
             check_interval_seconds=settings.default_check_interval_seconds,
             consecutive_alert_threshold=settings.default_consecutive_alert_threshold,
+            speed_test_enabled=settings.default_speed_test_enabled,
+            speed_test_interval_seconds=settings.default_speed_test_interval_seconds,
         )
         session.add(server)
         await session.flush()

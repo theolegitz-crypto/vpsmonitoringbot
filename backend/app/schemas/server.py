@@ -26,6 +26,8 @@ class ServerBase(BaseModel):
     packet_loss_critical: float = 20.0
     check_interval_seconds: int = 60
     consecutive_alert_threshold: int = 3
+    speed_test_enabled: bool = False
+    speed_test_interval_seconds: int = 21600
 
 
 class ServerCreate(ServerBase):
@@ -42,6 +44,8 @@ class ServerUpdate(BaseModel):
     packet_loss_critical: float | None = None
     check_interval_seconds: int | None = None
     consecutive_alert_threshold: int | None = None
+    speed_test_enabled: bool | None = None
+    speed_test_interval_seconds: int | None = None
     muted_until: datetime | None = None
 
 
@@ -75,6 +79,7 @@ class ServerRead(ServerBase):
     last_jitter_ms: float | None
     agent_last_seen_at: datetime | None
     agent_version: str | None
+    last_speed_test_requested_at: datetime | None
     consecutive_issues: int
     created_at: datetime
     updated_at: datetime | None

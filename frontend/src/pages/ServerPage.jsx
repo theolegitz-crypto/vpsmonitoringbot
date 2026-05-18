@@ -269,7 +269,7 @@ export function ServerPage() {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <div className="rounded-3xl bg-white/5 p-5">
             <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Agent last seen</p>
             <p className="mt-2 text-sm font-medium text-slate-200">{formatDate(server.agent_last_seen_at)}</p>
@@ -285,6 +285,15 @@ export function ServerPage() {
           <div className="rounded-3xl bg-white/5 p-5">
             <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Containers in last snapshot</p>
             <p className="mt-2 text-2xl font-semibold">{server.current_containers.length}</p>
+          </div>
+          <div className="rounded-3xl bg-white/5 p-5">
+            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Speed test schedule</p>
+            <p className="mt-2 text-2xl font-semibold">
+              {server.speed_test_enabled ? formatDuration(server.speed_test_interval_seconds) : "Disabled"}
+            </p>
+            <p className="mt-2 text-sm text-slate-400">
+              Last queued: {formatDate(server.last_speed_test_requested_at)}
+            </p>
           </div>
         </div>
       </section>
@@ -321,6 +330,9 @@ export function ServerPage() {
             <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Speed test</p>
             <h2 className="mt-2 text-2xl font-bold">Server bandwidth check</h2>
             <p className="mt-2 text-sm text-slate-400">Runs on the VPS agent, not in the browser, so it measures the server itself.</p>
+            <p className="mt-2 text-sm text-slate-500">
+              Schedule: {server.speed_test_enabled ? `enabled every ${formatDuration(server.speed_test_interval_seconds)}` : "disabled"}.
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <button

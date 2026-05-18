@@ -46,6 +46,8 @@ async def create_server(payload: ServerCreate) -> ServerRead:
             packet_loss_critical=payload.packet_loss_critical,
             check_interval_seconds=payload.check_interval_seconds,
             consecutive_alert_threshold=payload.consecutive_alert_threshold,
+            speed_test_enabled=payload.speed_test_enabled,
+            speed_test_interval_seconds=payload.speed_test_interval_seconds,
         )
         session.add(server)
         await session.flush()

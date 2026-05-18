@@ -1,14 +1,20 @@
+import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from statistics import mean
 
 from sqlalchemy import Select, desc, func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.app.core.config import settings
 from backend.app.models import AlertEvent, Server, Severity, SpeedTestResult, SpeedTestStatus
 from backend.app.schemas.speed_test import AgentSpeedTestCompleteRequest
 from backend.app.services.notifier import TelegramNotifier
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -25,6 +31,7 @@ class SpeedTestService:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
         self.session_factory = session_factory
         self.notifier = TelegramNotifier()
+        self._schedule_lock = asyncio.Lock()
 
     async def queue_speed_test(self, server_id: int) -> tuple[SpeedTestResult, bool]:
         async with self.session_factory() as session:
@@ -32,6 +39,7 @@ class SpeedTestService:
             if not server:
                 raise LookupError("Server not found")
 
+            requested_at = datetime.now(timezone.utc)
             existing = await session.scalar(
                 select(SpeedTestResult)
                 .where(
@@ -41,13 +49,69 @@ class SpeedTestService:
                 .order_by(SpeedTestResult.created_at.desc())
             )
             if existing:
+                server.last_speed_test_requested_at = requested_at
+                await session.commit()
                 return existing, False
 
             item = SpeedTestResult(server_id=server_id, status=SpeedTestStatus.PENDING)
+            server.last_speed_test_requested_at = requested_at
             session.add(item)
             await session.commit()
             await session.refresh(item)
             return item, True
+
+    async def run_due_speed_tests(self) -> dict[str, int]:
+        if self._schedule_lock.locked():
+            return {"queued": 0, "existing": 0}
+
+        async with self._schedule_lock:
+            now = datetime.now(timezone.utc)
+            try:
+                async with self.session_factory() as session:
+                    servers = (
+                        await session.scalars(
+                            select(Server).where(
+                                Server.speed_test_enabled.is_(True),
+                                Server.speed_test_interval_seconds > 0,
+                            )
+                        )
+                    ).all()
+
+                    queued = 0
+                    existing = 0
+
+                    for server in servers:
+                        if not self._is_due(server.last_speed_test_requested_at, server.speed_test_interval_seconds, now):
+                            continue
+
+                        pending_or_running = await session.scalar(
+                            select(SpeedTestResult)
+                            .where(
+                                SpeedTestResult.server_id == server.id,
+                                SpeedTestResult.status.in_([SpeedTestStatus.PENDING, SpeedTestStatus.RUNNING]),
+                            )
+                            .order_by(SpeedTestResult.created_at.desc())
+                        )
+
+                        server.last_speed_test_requested_at = now
+                        if pending_or_running:
+                            existing += 1
+                            continue
+
+                        session.add(SpeedTestResult(server_id=server.id, status=SpeedTestStatus.PENDING))
+                        queued += 1
+
+                    await session.commit()
+            except SQLAlchemyError as exc:
+                logger.warning(
+                    "Speed test scheduler skipped because database schema is not ready. Run Alembic migrations first. Details: %s",
+                    exc,
+                )
+                return {"queued": 0, "existing": 0}
+
+            if queued:
+                logger.info("Queued %s scheduled speed test(s)", queued)
+            return {"queued": queued, "existing": existing}
 
     async def claim_next(self, server_id: int | None, server_name: str | None) -> SpeedTestResult | None:
         async with self.session_factory() as session:
@@ -367,3 +431,11 @@ class SpeedTestService:
         if value is None:
             return "n/a"
         return f"{value:.1f} ms"
+
+    @staticmethod
+    def _is_due(last_requested_at: datetime | None, interval_seconds: int, now: datetime) -> bool:
+        if interval_seconds <= 0:
+            return False
+        if not last_requested_at:
+            return True
+        return last_requested_at <= now - timedelta(seconds=interval_seconds)
