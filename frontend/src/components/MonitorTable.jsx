@@ -1,11 +1,11 @@
 import { Link } from "react-router-dom";
-import { Pencil, Play, Search, Trash2 } from "lucide-react";
+import { Pencil, Play, Search, Trash2, Zap } from "lucide-react";
 
 import { formatPercent, statusTone } from "../lib/format";
 import { StatusStrip } from "./StatusStrip";
 
 
-export function MonitorTable({ rows, onRunServer, onRunService, onDeleteServer }) {
+export function MonitorTable({ rows, onRunServer, onRunService, onSpeedTestServer, onDeleteServer }) {
   return (
     <div className="overflow-x-auto rounded-[2rem] border border-white/8 bg-panel/88 shadow-glow">
       <table className="min-w-[1080px] w-full border-collapse text-sm">
@@ -68,6 +68,16 @@ export function MonitorTable({ rows, onRunServer, onRunService, onDeleteServer }
                     <Search size={14} />
                     Open
                   </Link>
+                  {row.kind === "server" ? (
+                    <button
+                      type="button"
+                      onClick={() => onSpeedTestServer?.(row.runId)}
+                      className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-3 py-2 text-xs font-medium text-white transition hover:bg-accent/20"
+                    >
+                      <Zap size={14} />
+                      Speed
+                    </button>
+                  ) : null}
                   {row.kind === "server" ? (
                     <Link
                       to={`${row.link}?edit=1`}

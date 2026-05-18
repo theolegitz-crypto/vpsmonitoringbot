@@ -32,6 +32,8 @@ class Server(Base):
     last_latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     last_packet_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
     last_jitter_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    agent_last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    agent_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     consecutive_issues: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -44,4 +46,11 @@ class Server(Base):
     check_results = relationship("CheckResult", back_populates="server", cascade="all, delete-orphan")
     incidents = relationship("Incident", back_populates="server", cascade="all, delete-orphan")
     alert_events = relationship("AlertEvent", back_populates="server", cascade="all, delete-orphan")
-
+    agent_metrics = relationship("AgentMetric", back_populates="server", cascade="all, delete-orphan")
+    container_metrics = relationship("ContainerMetric", back_populates="server", cascade="all, delete-orphan")
+    diagnostic_snapshots = relationship(
+        "DiagnosticSnapshot", back_populates="server", cascade="all, delete-orphan"
+    )
+    speed_test_results = relationship(
+        "SpeedTestResult", back_populates="server", cascade="all, delete-orphan"
+    )

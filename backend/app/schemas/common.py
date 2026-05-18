@@ -65,3 +65,15 @@ class CheckResultRead(ORMModel):
     message: str | None
     checked_at: datetime
 
+
+class DiagnosticSnapshotRead(ORMModel):
+    id: int
+    server_id: int | None
+    service_check_id: int | None
+    category: str
+    headline: str
+    check_type: CheckType | None
+    status: ServerStatus | None
+    severity: Severity
+    details: dict | None
+    created_at: datetime

@@ -1,13 +1,9 @@
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
-from bot.access import (
-    describe_telegram_context,
-    ensure_callback_allowed,
-    ensure_message_allowed,
-)
+from bot.access import describe_telegram_context, ensure_callback_allowed, ensure_message_allowed
 from bot.keyboards import (
     ALERTS_BUTTON,
     ADD_SERVER_BUTTON,
@@ -16,7 +12,9 @@ from bot.keyboards import (
     HELP_BUTTON,
     SERVERS_BUTTON,
     STATUS_BUTTON,
+    cancel_inline_keyboard,
     cancel_keyboard,
+    main_menu_inline_keyboard,
     main_menu_keyboard,
     mute_duration_keyboard,
     server_actions_keyboard,
@@ -46,6 +44,8 @@ from bot.services import (
     server_detail_text,
     server_detail_text_by_id,
     servers_text,
+    speed_test_text,
+    speed_test_text_by_id,
     status_summary_text,
     unmute_text,
     unmute_text_by_id,
@@ -63,15 +63,44 @@ ACTION_TITLES = {
     "ping": "📡 Выбери сервер для ping",
     "history": "🕓 Выбери сервер для истории",
     "ports": "🔌 Выбери сервер для проверки портов",
+    "speed": "⚡ Выбери сервер для speed test",
     "mute": "🔕 Выбери сервер, чтобы приглушить уведомления",
     "unmute": "🔔 Выбери сервер, чтобы включить уведомления",
 }
 
 
+EXAMPLES_TEXT = (
+    "📚 Примеры\n"
+    "/status\n"
+    "/servers\n"
+    "/server\n"
+    "/editserver\n"
+    "/ping\n"
+    "/history\n"
+    "/ports\n"
+    "/speed\n"
+    "/addserver\n"
+    "/mute\n"
+    "/chatinfo\n"
+    "/ssl example.com"
+)
+
+
+def menu_markup_for(message: Message):
+    return main_menu_keyboard if message.chat.type == "private" else main_menu_inline_keyboard
+
+
+def cancel_markup_for(message: Message):
+    return cancel_keyboard if message.chat.type == "private" else cancel_inline_keyboard
+
+
 async def send_server_picker(message: Message, action: str, page: int = 0) -> None:
     servers = await list_servers_for_picker()
     if not servers:
-        await message.answer("📭 Пока нет добавленных серверов. Сначала создай их в веб-панели или через /addserver.")
+        await message.answer(
+            "📭 Пока нет добавленных серверов. Сначала создай их в веб-панели или через /addserver.",
+            reply_markup=menu_markup_for(message),
+        )
         return
     await message.answer(
         ACTION_TITLES[action],
@@ -84,7 +113,7 @@ async def edit_server_picker(callback: CallbackQuery, action: str, page: int = 0
         return
     servers = await list_servers_for_picker()
     if not servers:
-        await callback.message.edit_text("📭 Пока нет добавленных серверов.")
+        await callback.message.edit_text("📭 Пока нет добавленных серверов.", reply_markup=main_menu_inline_keyboard)
         return
     await callback.message.edit_text(
         ACTION_TITLES[action],
@@ -114,7 +143,7 @@ async def start_add_server_flow(message: Message, state: FSMContext) -> None:
         "Шаг 1 из 6.\n"
         "Введи имя сервера.\n"
         "Пример: `vps-germany-1`",
-        reply_markup=cancel_keyboard,
+        reply_markup=cancel_markup_for(message),
         parse_mode="Markdown",
     )
 
@@ -132,7 +161,7 @@ async def start_edit_server_field_flow(
     await state.update_data(server_id=server_id, field=field)
     await message.answer(
         f"✏️ Редактирование поля: {meta['label']}\n\n{meta['prompt']}",
-        reply_markup=cancel_keyboard,
+        reply_markup=cancel_markup_for(message),
         parse_mode="Markdown",
     )
 
@@ -141,12 +170,17 @@ async def start_edit_server_field_flow(
 async def cmd_start(message: Message) -> None:
     if not await ensure_message_allowed(message):
         return
+    if message.chat.type != "private":
+        await message.answer(
+            "Убираю старую reply-клавиатуру. В группах и topics теперь используем inline-кнопки.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
     await message.answer(
         "👋 SwagMonitor готов к работе.\n\n"
-        "Теперь серверы можно выбирать кнопками, без ручного ввода имени.\n"
-        "Открой «🖥 Серверы» или используй команды /server, /editserver, /ping, /history, /ports.\n\n"
+        "В личке можно пользоваться кнопками меню, а в группах и topics меню теперь работает через inline-кнопки.\n"
+        "Открой «🖥 Серверы» или используй /server, /speed, /ping, /history, /ports.\n\n"
         "Если мониторинг ещё не настроен, сначала добавь сервер через /addserver или из веб-панели.",
-        reply_markup=main_menu_keyboard,
+        reply_markup=menu_markup_for(message),
     )
 
 
@@ -166,7 +200,7 @@ async def cmd_chatinfo(message: Message) -> None:
 async def cmd_help(message: Message) -> None:
     if not await ensure_message_allowed(message):
         return
-    await message.answer(help_text(), reply_markup=main_menu_keyboard)
+    await message.answer(help_text(), reply_markup=menu_markup_for(message))
 
 
 @router.message(Command("status"))
@@ -238,6 +272,17 @@ async def cmd_ports(message: Message, command: CommandObject) -> None:
     await send_server_picker(message, "ports")
 
 
+@router.message(Command("speed"))
+async def cmd_speed(message: Message, command: CommandObject) -> None:
+    if not await ensure_message_allowed(message):
+        return
+    if command.args:
+        text = await speed_test_text(command.args.strip())
+        await message.answer(text or "❌ Сервер не найден")
+        return
+    await send_server_picker(message, "speed")
+
+
 @router.message(Command("mute"))
 async def cmd_mute(message: Message, command: CommandObject) -> None:
     if not await ensure_message_allowed(message):
@@ -293,58 +338,34 @@ async def cmd_ssl(message: Message, command: CommandObject) -> None:
 
 @router.message(F.text == STATUS_BUTTON)
 async def status_button(message: Message) -> None:
-    if not await ensure_message_allowed(message):
-        return
-    await message.answer(await status_summary_text())
+    await cmd_status(message)
 
 
 @router.message(F.text == SERVERS_BUTTON)
 async def servers_button(message: Message) -> None:
-    if not await ensure_message_allowed(message):
-        return
-    await message.answer(await servers_text())
-    await send_server_picker(message, "detail")
+    await cmd_servers(message)
 
 
 @router.message(F.text == ALERTS_BUTTON)
 async def alerts_button(message: Message) -> None:
-    if not await ensure_message_allowed(message):
-        return
-    await message.answer(await alerts_text())
+    await cmd_alerts(message)
 
 
 @router.message(F.text == HELP_BUTTON)
 async def help_button(message: Message) -> None:
-    if not await ensure_message_allowed(message):
-        return
-    await message.answer(help_text(), reply_markup=main_menu_keyboard)
+    await cmd_help(message)
 
 
 @router.message(F.text == EXAMPLES_BUTTON)
 async def examples_button(message: Message) -> None:
     if not await ensure_message_allowed(message):
         return
-    await message.answer(
-        "📚 Примеры\n"
-        "/status\n"
-        "/servers\n"
-        "/server\n"
-        "/editserver\n"
-        "/ping\n"
-        "/history\n"
-        "/ports\n"
-        "/addserver\n"
-        "/mute\n"
-        "/chatinfo\n"
-        "/ssl example.com"
-    )
+    await message.answer(EXAMPLES_TEXT, reply_markup=menu_markup_for(message))
 
 
 @router.message(F.text == ADD_SERVER_BUTTON)
 async def add_server_button(message: Message, state: FSMContext) -> None:
-    if not await ensure_message_allowed(message):
-        return
-    await start_add_server_flow(message, state)
+    await cmd_addserver(message, state)
 
 
 @router.message(Command("cancel"))
@@ -354,17 +375,17 @@ async def cancel_flow(message: Message, state: FSMContext) -> None:
         return
     current_state = await state.get_state()
     if not current_state:
-        await message.answer("Нечего отменять.", reply_markup=main_menu_keyboard)
+        await message.answer("Нечего отменять.", reply_markup=menu_markup_for(message))
         return
     await state.clear()
-    await message.answer("❌ Действие отменено.", reply_markup=main_menu_keyboard)
+    await message.answer("❌ Действие отменено.", reply_markup=menu_markup_for(message))
 
 
 @router.message(AddServerStates.waiting_for_name)
 async def add_server_name_step(message: Message, state: FSMContext) -> None:
     if not await ensure_message_allowed(message):
         return
-    name = message.text.strip()
+    name = (message.text or "").strip()
     if len(name) < 2:
         await message.answer("Имя слишком короткое. Введи нормальное имя сервера.")
         return
@@ -382,7 +403,7 @@ async def add_server_name_step(message: Message, state: FSMContext) -> None:
 async def add_server_address_step(message: Message, state: FSMContext) -> None:
     if not await ensure_message_allowed(message):
         return
-    address = message.text.strip()
+    address = (message.text or "").strip()
     if len(address) < 3:
         await message.answer("Адрес выглядит слишком коротким. Попробуй ещё раз.")
         return
@@ -399,7 +420,7 @@ async def add_server_address_step(message: Message, state: FSMContext) -> None:
 async def add_server_description_step(message: Message, state: FSMContext) -> None:
     if not await ensure_message_allowed(message):
         return
-    await state.update_data(description=normalize_optional_text(message.text))
+    await state.update_data(description=normalize_optional_text(message.text or ""))
     await state.set_state(AddServerStates.waiting_for_website_url)
     await message.answer(
         "Шаг 4 из 6.\n"
@@ -413,7 +434,7 @@ async def add_server_description_step(message: Message, state: FSMContext) -> No
 async def add_server_website_step(message: Message, state: FSMContext) -> None:
     if not await ensure_message_allowed(message):
         return
-    await state.update_data(website_url=normalize_optional_text(message.text))
+    await state.update_data(website_url=normalize_optional_text(message.text or ""))
     await state.set_state(AddServerStates.waiting_for_ports)
     await message.answer(
         "Шаг 5 из 6.\n"
@@ -428,7 +449,7 @@ async def add_server_ports_step(message: Message, state: FSMContext) -> None:
     if not await ensure_message_allowed(message):
         return
     try:
-        ports = parse_ports_input(message.text)
+        ports = parse_ports_input(message.text or "")
     except ValueError as exc:
         await message.answer(str(exc))
         return
@@ -447,7 +468,7 @@ async def add_server_ssl_step(message: Message, state: FSMContext) -> None:
     if not await ensure_message_allowed(message):
         return
     data = await state.get_data()
-    ssl_domain = normalize_optional_text(message.text)
+    ssl_domain = normalize_optional_text(message.text or "")
 
     try:
         server, checks_added = await create_server_from_bot(
@@ -459,14 +480,17 @@ async def add_server_ssl_step(message: Message, state: FSMContext) -> None:
             ssl_domain=ssl_domain,
         )
     except ValueError as exc:
-        await message.answer(f"❌ Не удалось создать сервер: {exc}", reply_markup=main_menu_keyboard)
+        await message.answer(
+            f"❌ Не удалось создать сервер: {exc}",
+            reply_markup=menu_markup_for(message),
+        )
         await state.clear()
         return
 
     await state.clear()
     await message.answer(
         f"✅ Сервер `{server.name}` добавлен.\nСоздано проверок: {checks_added}",
-        reply_markup=main_menu_keyboard,
+        reply_markup=menu_markup_for(message),
         parse_mode="Markdown",
     )
 
@@ -492,25 +516,28 @@ async def edit_server_value_step(message: Message, state: FSMContext) -> None:
     field = data.get("field")
     if not server_id or not field:
         await state.clear()
-        await message.answer("❌ Сессия редактирования потеряна. Открой сервер заново.", reply_markup=main_menu_keyboard)
+        await message.answer(
+            "❌ Сессия редактирования потеряна. Открой сервер заново.",
+            reply_markup=menu_markup_for(message),
+        )
         return
 
     try:
-        updated = await update_server_field_by_id(int(server_id), field, message.text)
+        updated = await update_server_field_by_id(int(server_id), field, message.text or "")
     except ValueError as exc:
         await message.answer(str(exc))
         return
 
     if not updated:
         await state.clear()
-        await message.answer("❌ Сервер не найден.", reply_markup=main_menu_keyboard)
+        await message.answer("❌ Сервер не найден.", reply_markup=menu_markup_for(message))
         return
 
     meta = get_server_edit_field_meta(field)
     await state.clear()
     await message.answer(
         f"✅ Поле «{meta['label']}» обновлено для сервера {updated.name}.",
-        reply_markup=main_menu_keyboard,
+        reply_markup=menu_markup_for(message),
     )
 
     text = await server_detail_text_by_id(updated.id)
@@ -531,7 +558,7 @@ async def noop_callback(callback: CallbackQuery) -> None:
 async def status_callback(callback: CallbackQuery) -> None:
     if not await ensure_callback_allowed(callback):
         return
-    await callback.message.edit_text(await status_summary_text())
+    await callback.message.edit_text(await status_summary_text(), reply_markup=main_menu_inline_keyboard)
     await callback.answer()
 
 
@@ -539,7 +566,46 @@ async def status_callback(callback: CallbackQuery) -> None:
 async def alerts_callback(callback: CallbackQuery) -> None:
     if not await ensure_callback_allowed(callback):
         return
-    await callback.message.edit_text(await alerts_text())
+    await callback.message.edit_text(await alerts_text(), reply_markup=main_menu_inline_keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "action:servers")
+async def servers_callback(callback: CallbackQuery) -> None:
+    await edit_server_picker(callback, "detail")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "action:help")
+async def help_callback(callback: CallbackQuery) -> None:
+    if not await ensure_callback_allowed(callback):
+        return
+    await callback.message.edit_text(help_text(), reply_markup=main_menu_inline_keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "action:examples")
+async def examples_callback(callback: CallbackQuery) -> None:
+    if not await ensure_callback_allowed(callback):
+        return
+    await callback.message.edit_text(EXAMPLES_TEXT, reply_markup=main_menu_inline_keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "action:addserver")
+async def add_server_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await ensure_callback_allowed(callback):
+        return
+    await start_add_server_flow(callback.message, state)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "action:cancel")
+async def cancel_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await ensure_callback_allowed(callback):
+        return
+    await state.clear()
+    await callback.message.edit_text("❌ Действие отменено.", reply_markup=main_menu_inline_keyboard)
     await callback.answer()
 
 
@@ -578,6 +644,7 @@ async def delete_confirm_callback(callback: CallbackQuery) -> None:
         return
     await callback.message.edit_text(
         f"🗑 Сервер {deleted_name} удалён.\n\nОткрой /servers, чтобы выбрать другой сервер.",
+        reply_markup=main_menu_inline_keyboard,
     )
     await callback.answer("Сервер удалён")
 
@@ -631,6 +698,16 @@ async def server_action_callback(callback: CallbackQuery) -> None:
         )
     elif action == "ports":
         text = await ports_text_by_id(server_id)
+        if not text:
+            await callback.answer("Сервер не найден", show_alert=True)
+            return
+        detail = await get_server_detail(server_id)
+        await callback.message.edit_text(
+            text,
+            reply_markup=server_actions_keyboard(server_id, is_muted=detail.muted_until is not None if detail else False),
+        )
+    elif action == "speed":
+        text = await speed_test_text_by_id(server_id)
         if not text:
             await callback.answer("Сервер не найден", show_alert=True)
             return

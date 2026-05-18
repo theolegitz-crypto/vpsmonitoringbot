@@ -22,6 +22,7 @@ BOT_COMMANDS = [
     BotCommand(command="ping", description="Выбрать сервер и проверить ping"),
     BotCommand(command="history", description="Выбрать сервер и открыть историю"),
     BotCommand(command="ports", description="Выбрать сервер и показать порты"),
+    BotCommand(command="speed", description="Выбрать сервер и запустить speed test"),
     BotCommand(command="addserver", description="Добавить сервер через Telegram"),
     BotCommand(command="alerts", description="Последние алерты"),
     BotCommand(command="mute", description="Выбрать сервер и приглушить алерты"),

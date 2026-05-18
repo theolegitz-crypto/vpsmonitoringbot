@@ -4,9 +4,28 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from backend.app.models import AlertEvent, CheckResult, Incident, Server, ServerStatus
-from backend.app.schemas.common import AlertEventRead, CheckResultRead, HistoryPoint, IncidentRead, MetricPoint
+from backend.app.models import (
+    AgentMetric,
+    AlertEvent,
+    CheckResult,
+    ContainerMetric,
+    DiagnosticSnapshot,
+    Incident,
+    Server,
+    ServerStatus,
+    SpeedTestResult,
+)
+from backend.app.schemas.agent import AgentMetricRead, ContainerMetricRead
+from backend.app.schemas.common import (
+    AlertEventRead,
+    CheckResultRead,
+    DiagnosticSnapshotRead,
+    HistoryPoint,
+    IncidentRead,
+    MetricPoint,
+)
 from backend.app.schemas.server import OverviewResponse, OverviewSummary, ServerCard, ServerDetail
+from backend.app.schemas.speed_test import SpeedTestRead
 from backend.app.schemas.service_check import ServiceCheckRead
 
 
@@ -76,6 +95,41 @@ class DashboardService:
                     .limit(10)
                 )
             ).all()
+            latest_agent_metric = await session.scalar(
+                select(AgentMetric)
+                .where(AgentMetric.server_id == server_id)
+                .order_by(AgentMetric.recorded_at.desc())
+            )
+            latest_container_timestamp = await session.scalar(
+                select(ContainerMetric.recorded_at)
+                .where(ContainerMetric.server_id == server_id)
+                .order_by(ContainerMetric.recorded_at.desc())
+            )
+            current_containers = []
+            if latest_container_timestamp:
+                current_containers = (
+                    await session.scalars(
+                        select(ContainerMetric)
+                        .where(
+                            ContainerMetric.server_id == server_id,
+                            ContainerMetric.recorded_at == latest_container_timestamp,
+                        )
+                        .order_by(ContainerMetric.name.asc())
+                    )
+                ).all()
+            recent_diagnostics = (
+                await session.scalars(
+                    select(DiagnosticSnapshot)
+                    .where(DiagnosticSnapshot.server_id == server_id)
+                    .order_by(DiagnosticSnapshot.created_at.desc())
+                    .limit(12)
+                )
+            ).all()
+            latest_speed_test = await session.scalar(
+                select(SpeedTestResult)
+                .where(SpeedTestResult.server_id == server_id)
+                .order_by(SpeedTestResult.created_at.desc())
+            )
 
             card = await self._build_server_card(session, server)
             return ServerDetail(
@@ -87,6 +141,18 @@ class DashboardService:
                 recent_incidents=[IncidentRead.model_validate(item) for item in incidents],
                 recent_alerts=[AlertEventRead.model_validate(item) for item in alerts],
                 latest_results=[CheckResultRead.model_validate(item) for item in results],
+                latest_agent_metric=(
+                    AgentMetricRead.model_validate(latest_agent_metric) if latest_agent_metric else None
+                ),
+                current_containers=[
+                    ContainerMetricRead.model_validate(item) for item in current_containers
+                ],
+                recent_diagnostics=[
+                    DiagnosticSnapshotRead.model_validate(item) for item in recent_diagnostics
+                ],
+                latest_speed_test=(
+                    SpeedTestRead.model_validate(latest_speed_test) if latest_speed_test else None
+                ),
             )
 
     async def list_servers(self) -> list[ServerCard]:

@@ -4,16 +4,18 @@ from sqlalchemy import func, select
 
 from backend.app.core.config import settings
 from backend.app.db.session import AsyncSessionLocal
-from backend.app.models import AlertEvent, CheckType, Server, ServerStatus, ServiceCheck
+from backend.app.models import AlertEvent, CheckType, Server, ServerStatus, ServiceCheck, SpeedTestStatus
 from backend.app.services.dashboard import DashboardService
 from backend.app.services.monitoring import MonitoringService
 from backend.app.services.server_management import apply_server_updates
+from backend.app.services.speedtests import SpeedTestService
 from backend.app.utils.service_checks import check_ssl_expiry
 from backend.app.utils.time import parse_duration
 
 
 dashboard_service = DashboardService(AsyncSessionLocal)
 monitoring_service = MonitoringService(AsyncSessionLocal)
+speed_test_service = SpeedTestService(AsyncSessionLocal)
 
 
 STATUS_LABELS = {
@@ -95,11 +97,21 @@ def _status_text(status: ServerStatus) -> str:
 
 
 def _safe_latency(value: float | None) -> str:
-    return f"{(value or 0):.1f} ms"
+    if value is None:
+        return "n/a"
+    return f"{value:.1f} ms"
 
 
 def _safe_percent(value: float | None) -> str:
-    return f"{(value or 0):.1f}%"
+    if value is None:
+        return "n/a"
+    return f"{value:.1f}%"
+
+
+def _safe_speed(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.1f} Mbps"
 
 
 def normalize_optional_text(value: str) -> str | None:
@@ -139,17 +151,13 @@ def help_text() -> str:
         "/ping - выбрать сервер и запустить ping\n"
         "/history - выбрать сервер и открыть историю\n"
         "/ports - выбрать сервер и посмотреть TCP, HTTP и SSL\n"
+        "/speed - выбрать сервер и запустить speed test через агент\n"
         "/alerts - последние события и алерты\n"
         "/addserver - добавить сервер прямо через Telegram\n"
         "/mute - приглушить уведомления для сервера\n"
         "/unmute - снова включить уведомления\n"
         "/chatinfo - показать chat id и topic id\n"
         "/ssl <domain> - вручную проверить сертификат\n\n"
-        "🧭 Как пользоваться\n"
-        "1. Добавь сервер через веб-панель или /addserver.\n"
-        "2. Открой /servers или нажми кнопку «Серверы».\n"
-        "3. Выбирай нужный сервер кнопками, без ручного ввода имени.\n"
-        "4. В карточке сервера доступны ping, история, порты, редактирование и удаление.\n\n"
         "История: 🟩 OK  🟨 деградация  🟥 сбой  ⬜ нет данных"
     )
 
@@ -195,6 +203,37 @@ def _parse_server_field_value(field: str, raw_value: str):
     if parsed < meta["min"]:
         raise ValueError(f"Значение должно быть не меньше {meta['min']}.")
     return parsed
+
+
+def _format_speed_test_block(speed_test) -> str:
+    if not speed_test:
+        return "⚡ Speed test ещё не запускался."
+
+    if speed_test.status == SpeedTestStatus.PENDING:
+        return (
+            "⚡ Speed test поставлен в очередь.\n"
+            "Агент заберёт задачу на следующем heartbeat."
+        )
+
+    if speed_test.status == SpeedTestStatus.RUNNING:
+        return "⚡ Speed test уже выполняется на сервере."
+
+    if speed_test.status == SpeedTestStatus.FAILED:
+        return (
+            "⚡ Последний speed test завершился ошибкой.\n"
+            f"Ошибка: {speed_test.error or 'unknown error'}"
+        )
+
+    return (
+        "⚡ Последний speed test\n"
+        f"Провайдер: {speed_test.provider_name or 'n/a'}\n"
+        f"Локация: {speed_test.provider_location or 'n/a'}\n"
+        f"IP: {speed_test.external_ip or 'n/a'}\n"
+        f"Download: {_safe_speed(speed_test.download_mbps)}\n"
+        f"Upload: {_safe_speed(speed_test.upload_mbps)}\n"
+        f"Ping: {_safe_latency(speed_test.ping_ms)}\n"
+        f"Завершён: {speed_test.completed_at.isoformat() if speed_test.completed_at else 'n/a'}"
+    )
 
 
 async def list_servers_for_picker():
@@ -326,10 +365,7 @@ async def servers_text() -> str:
     servers = await dashboard_service.list_servers()
     if not servers:
         return "📭 Пока нет добавленных серверов. Добавь первый через веб-панель или /addserver."
-    return (
-        "🖥 Список серверов готов.\n"
-        "Нажми на нужный сервер в кнопках ниже, чтобы открыть детали."
-    )
+    return "🖥 Список серверов готов. Нажми на нужный сервер в кнопках ниже."
 
 
 async def server_detail_text_by_id(server_id: int) -> str | None:
@@ -346,6 +382,8 @@ async def server_detail_text_by_id(server_id: int) -> str | None:
         for check in detail.services
     ) or "- сервисные проверки пока не добавлены"
 
+    speed_block = _format_speed_test_block(detail.latest_speed_test)
+
     return (
         f"🖥 {detail.name}\n"
         f"Адрес: {detail.address}\n"
@@ -355,6 +393,7 @@ async def server_detail_text_by_id(server_id: int) -> str | None:
         f"Уведомления: {'приглушены до ' + detail.muted_until.isoformat() if detail.muted_until else 'активны'}\n"
         f"История: {_format_history_line(detail.history)}\n"
         "Легенда: 🟩 OK  🟨 деградация  🟥 сбой  ⬜ нет данных\n\n"
+        f"{speed_block}\n\n"
         f"🔎 Проверки сервисов\n{checks}"
     )
 
@@ -368,9 +407,7 @@ async def server_detail_text(name: str) -> str | None:
 
 async def alerts_text() -> str:
     async with AsyncSessionLocal() as session:
-        events = (
-            await session.scalars(select(AlertEvent).order_by(AlertEvent.created_at.desc()).limit(10))
-        ).all()
+        events = (await session.scalars(select(AlertEvent).order_by(AlertEvent.created_at.desc()).limit(10))).all()
     if not events:
         return "✅ Пока нет событий алертов. Когда появятся сбои или восстановления, они будут показаны здесь."
     return "🚨 Последние события\n" + "\n".join(
@@ -432,6 +469,31 @@ async def ports_text(name: str) -> str | None:
     return await ports_text_by_id(server.id)
 
 
+async def speed_test_text_by_id(server_id: int) -> str | None:
+    server = await find_server_by_id(server_id)
+    if not server:
+        return None
+
+    queued_item, queued = await speed_test_service.queue_speed_test(server.id)
+    detail = await get_server_detail(server.id)
+
+    queue_line = (
+        "⚡ Speed test поставлен в очередь. Агент заберёт задачу на следующем heartbeat."
+        if queued
+        else "⚡ На сервере уже есть незавершённый speed test. Ждём результат от агента."
+    )
+
+    latest_block = _format_speed_test_block(detail.latest_speed_test) if detail else _format_speed_test_block(queued_item)
+    return f"{queue_line}\n\n{latest_block}"
+
+
+async def speed_test_text(name: str) -> str | None:
+    server = await find_server_by_name(name)
+    if not server:
+        return None
+    return await speed_test_text_by_id(server.id)
+
+
 async def mute_text_by_id(server_id: int, duration: str) -> str | None:
     until = datetime.now(timezone.utc) + parse_duration(duration)
 
@@ -454,9 +516,7 @@ async def mute_text(name: str, duration: str) -> str | None:
             await session.commit()
             return f"🔕 Сервер {server.name}: уведомления выключены до {until.isoformat()}"
 
-        service_check = await session.scalar(
-            select(ServiceCheck).where(func.lower(ServiceCheck.name) == name.lower())
-        )
+        service_check = await session.scalar(select(ServiceCheck).where(func.lower(ServiceCheck.name) == name.lower()))
         if service_check:
             service_check.muted_until = until
             await session.commit()
@@ -483,9 +543,7 @@ async def unmute_text(name: str) -> str | None:
             await session.commit()
             return f"🔔 Сервер {server.name}: уведомления снова включены"
 
-        service_check = await session.scalar(
-            select(ServiceCheck).where(func.lower(ServiceCheck.name) == name.lower())
-        )
+        service_check = await session.scalar(select(ServiceCheck).where(func.lower(ServiceCheck.name) == name.lower()))
         if service_check:
             service_check.muted_until = None
             await session.commit()
@@ -521,11 +579,7 @@ async def run_ping_text(name: str) -> str | None:
 
 async def run_ssl_text(domain: str) -> str:
     result = await check_ssl_expiry(domain, 443, settings.http_timeout_seconds, settings.ssl_warning_days)
-    return (
-        f"🔐 SSL {domain}\n"
-        f"Статус: {_status_text(result.status)}\n"
-        f"{result.message}"
-    )
+    return f"🔐 SSL {domain}\nСтатус: {_status_text(result.status)}\n{result.message}"
 
 
 async def update_server_field_by_id(server_id: int, field: str, raw_value: str) -> Server | None:

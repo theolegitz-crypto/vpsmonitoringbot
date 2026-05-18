@@ -9,16 +9,19 @@ from backend.app.db.session import AsyncSessionLocal
 from backend.app.models import CheckType, Server, ServiceCheck
 from backend.app.schemas.common import HistoryPoint, MessageResponse
 from backend.app.schemas.server import MuteRequest, ServerCard, ServerCreate, ServerDetail, ServerRead, ServerUpdate
+from backend.app.schemas.speed_test import SpeedTestQueueResponse, SpeedTestRead
 from backend.app.schemas.service_check import ServiceCheckCreate, ServiceCheckRead, ServiceCheckUpdate
 from backend.app.services.dashboard import DashboardService
 from backend.app.services.monitoring import MonitoringService
 from backend.app.services.server_management import apply_server_updates
+from backend.app.services.speedtests import SpeedTestService
 from backend.app.utils.time import parse_duration
 
 
 router = APIRouter(prefix="/servers", tags=["servers"])
 dashboard_service = DashboardService(AsyncSessionLocal)
 monitoring_service = MonitoringService(AsyncSessionLocal)
+speed_test_service = SpeedTestService(AsyncSessionLocal)
 
 
 @router.get("", response_model=list[ServerCard])
@@ -138,6 +141,18 @@ async def run_server_check(server_id: int) -> ServerRead:
     if not server:
         raise HTTPException(status_code=404, detail="Server not found")
     return ServerRead.model_validate(server)
+
+
+@router.post("/{server_id}/speed-test", response_model=SpeedTestQueueResponse)
+async def queue_speed_test(server_id: int) -> SpeedTestQueueResponse:
+    try:
+        speed_test, queued = await speed_test_service.queue_speed_test(server_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return SpeedTestQueueResponse(
+        queued=queued,
+        speed_test=SpeedTestRead.model_validate(speed_test),
+    )
 
 
 @router.get("/{server_id}/history", response_model=list[HistoryPoint])

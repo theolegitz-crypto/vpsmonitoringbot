@@ -8,7 +8,31 @@ import { ServerSettingsForm } from "../components/ServerSettingsForm";
 import { StatusBadge } from "../components/StatusBadge";
 import { StatusStrip } from "../components/StatusStrip";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
-import { formatDate, formatLatency, formatPercent } from "../lib/format";
+import { formatBytes, formatDate, formatDuration, formatLatency, formatPercent } from "../lib/format";
+
+
+function formatMegabytes(value) {
+  if (value === null || value === undefined) {
+    return "n/a";
+  }
+  return formatBytes(value * 1024 * 1024);
+}
+
+
+function formatGigabytes(value) {
+  if (value === null || value === undefined) {
+    return "n/a";
+  }
+  return formatBytes(value * 1024 * 1024 * 1024);
+}
+
+
+function formatSpeed(value) {
+  if (value === null || value === undefined) {
+    return "n/a";
+  }
+  return `${Number(value).toFixed(1)} Mbps`;
+}
 
 
 export function ServerPage() {
@@ -105,9 +129,27 @@ export function ServerPage() {
     }
   }
 
+  async function handleRunSpeedTest() {
+    if (!server) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.runSpeedTest(server.id);
+      await loadServer();
+    } catch (runError) {
+      setError(runError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!server) {
     return <div className="py-24 text-center text-slate-300">{error || "Loading server..."}</div>;
   }
+
+  const latestAgentMetric = server.latest_agent_metric;
+  const latestSpeedTest = server.latest_speed_test;
 
   return (
     <div className="space-y-8">
@@ -147,6 +189,14 @@ export function ServerPage() {
             >
               {server.muted_until ? <BellRing size={16} /> : <BellOff size={16} />}
               {server.muted_until ? "Unmute alerts" : "Mute for 2 hours"}
+            </button>
+            <button
+              type="button"
+              onClick={handleRunSpeedTest}
+              disabled={busy}
+              className="inline-flex items-center gap-3 rounded-full border border-accent/30 bg-accent/10 px-5 py-3 text-sm font-medium text-white transition hover:bg-accent/20 disabled:opacity-60"
+            >
+              Run speed test
             </button>
             <button
               type="button"
@@ -203,6 +253,25 @@ export function ServerPage() {
             <p className="mt-2 text-sm font-medium text-slate-200">{server.muted_until ? formatDate(server.muted_until) : "Active"}</p>
           </div>
         </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-3xl bg-white/5 p-5">
+            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Agent last seen</p>
+            <p className="mt-2 text-sm font-medium text-slate-200">{formatDate(server.agent_last_seen_at)}</p>
+          </div>
+          <div className="rounded-3xl bg-white/5 p-5">
+            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Agent version</p>
+            <p className="mt-2 text-2xl font-semibold">{server.agent_version || "n/a"}</p>
+          </div>
+          <div className="rounded-3xl bg-white/5 p-5">
+            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Diagnostics stored</p>
+            <p className="mt-2 text-2xl font-semibold">{server.recent_diagnostics.length}</p>
+          </div>
+          <div className="rounded-3xl bg-white/5 p-5">
+            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Containers in last snapshot</p>
+            <p className="mt-2 text-2xl font-semibold">{server.current_containers.length}</p>
+          </div>
+        </div>
       </section>
 
       {isEditing ? (
@@ -229,6 +298,124 @@ export function ServerPage() {
       <section className="grid gap-6 xl:grid-cols-2">
         <MetricChart data={server.latency_series} dataKey="latency" color="#45f0d1" label="Latency over time" />
         <MetricChart data={server.packet_loss_series} dataKey="packetloss" color="#f9a94b" label="Packet loss over time" />
+      </section>
+
+      <section className="rounded-[2rem] border border-white/8 bg-panel/88 p-6 shadow-glow">
+        <div className="mb-5 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Speed test</p>
+            <h2 className="mt-2 text-2xl font-bold">Server bandwidth check</h2>
+            <p className="mt-2 text-sm text-slate-400">Runs on the VPS agent, not in the browser, so it measures the server itself.</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleRunSpeedTest}
+            disabled={busy}
+            className="inline-flex items-center gap-3 rounded-full border border-accent/30 bg-accent/10 px-5 py-3 text-sm font-medium text-white transition hover:bg-accent/20 disabled:opacity-60"
+          >
+            Queue speed test
+          </button>
+        </div>
+
+        {latestSpeedTest ? (
+          <>
+            <div className="rounded-3xl border border-white/8 bg-white/5 px-4 py-3 text-sm text-slate-300">
+              Status: <span className="font-medium text-white">{latestSpeedTest.status}</span>
+              <span className="ml-3">Requested: {formatDate(latestSpeedTest.created_at)}</span>
+            </div>
+            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-3xl bg-white/5 p-5">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Download</p>
+                <p className="mt-2 text-2xl font-semibold">{formatSpeed(latestSpeedTest.download_mbps)}</p>
+              </div>
+              <div className="rounded-3xl bg-white/5 p-5">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Upload</p>
+                <p className="mt-2 text-2xl font-semibold">{formatSpeed(latestSpeedTest.upload_mbps)}</p>
+              </div>
+              <div className="rounded-3xl bg-white/5 p-5">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Ping</p>
+                <p className="mt-2 text-2xl font-semibold">{formatLatency(latestSpeedTest.ping_ms)}</p>
+              </div>
+              <div className="rounded-3xl bg-white/5 p-5">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Provider</p>
+                <p className="mt-2 text-sm font-medium text-slate-200">{latestSpeedTest.provider_name || "n/a"}</p>
+                <p className="mt-2 text-xs text-slate-500">{latestSpeedTest.provider_location || "n/a"}</p>
+              </div>
+            </div>
+            <div className="mt-4 rounded-3xl bg-white/5 p-4 text-sm text-slate-300">
+              <div>External IP: {latestSpeedTest.external_ip || "n/a"}</div>
+              <div className="mt-2">Started: {formatDate(latestSpeedTest.started_at)}</div>
+              <div className="mt-2">Completed: {formatDate(latestSpeedTest.completed_at)}</div>
+              {latestSpeedTest.error ? <div className="mt-2 text-red-200">Error: {latestSpeedTest.error}</div> : null}
+            </div>
+          </>
+        ) : (
+          <div className="rounded-3xl bg-white/5 p-4 text-sm text-slate-400">
+            Speed test has not been run yet. Queue one to measure download, upload and latency directly from the VPS agent.
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-[2rem] border border-white/8 bg-panel/88 p-6 shadow-glow">
+        <div className="mb-5">
+          <p className="text-xs uppercase tracking-[0.24em] text-slate-400">System metrics</p>
+          <h2 className="mt-2 text-2xl font-bold">Latest VPS snapshot from the agent</h2>
+          <p className="mt-2 text-sm text-slate-400">CPU, memory, disk, load average, uptime and cumulative network counters.</p>
+        </div>
+
+        {latestAgentMetric ? (
+          <>
+            <div className="rounded-3xl border border-white/8 bg-white/5 px-4 py-3 text-sm text-slate-300">
+              Snapshot recorded at {formatDate(latestAgentMetric.recorded_at)}
+            </div>
+            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="rounded-3xl bg-white/5 p-5">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">CPU</p>
+                <p className="mt-2 text-2xl font-semibold">{formatPercent(latestAgentMetric.cpu_percent)}</p>
+              </div>
+              <div className="rounded-3xl bg-white/5 p-5">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">RAM</p>
+                <p className="mt-2 text-2xl font-semibold">{formatPercent(latestAgentMetric.memory_percent)}</p>
+                <p className="mt-2 text-sm text-slate-400">
+                  {formatMegabytes(latestAgentMetric.memory_used_mb)} / {formatMegabytes(latestAgentMetric.memory_total_mb)}
+                </p>
+              </div>
+              <div className="rounded-3xl bg-white/5 p-5">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Disk</p>
+                <p className="mt-2 text-2xl font-semibold">{formatPercent(latestAgentMetric.disk_percent)}</p>
+                <p className="mt-2 text-sm text-slate-400">
+                  {formatGigabytes(latestAgentMetric.disk_used_gb)} / {formatGigabytes(latestAgentMetric.disk_total_gb)}
+                </p>
+              </div>
+              <div className="rounded-3xl bg-white/5 p-5">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Load average</p>
+                <p className="mt-2 text-2xl font-semibold">
+                  {[latestAgentMetric.load_1, latestAgentMetric.load_5, latestAgentMetric.load_15]
+                    .map((item) => (item === null || item === undefined ? "n/a" : item.toFixed(2)))
+                    .join(" / ")}
+                </p>
+              </div>
+              <div className="rounded-3xl bg-white/5 p-5">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Network RX/TX</p>
+                <p className="mt-2 text-sm font-medium text-slate-200">
+                  RX {formatBytes(latestAgentMetric.net_rx_bytes)}
+                </p>
+                <p className="mt-2 text-sm font-medium text-slate-200">
+                  TX {formatBytes(latestAgentMetric.net_tx_bytes)}
+                </p>
+              </div>
+              <div className="rounded-3xl bg-white/5 p-5">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Uptime</p>
+                <p className="mt-2 text-2xl font-semibold">{formatDuration(latestAgentMetric.uptime_seconds)}</p>
+                <p className="mt-2 text-sm text-slate-400">Swap {formatPercent(latestAgentMetric.swap_percent)}</p>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="rounded-3xl bg-white/5 p-4 text-sm text-slate-400">
+            Agent data has not arrived yet. Start the VPS agent on this server to collect CPU, RAM, disk, load and network metrics.
+          </div>
+        )}
       </section>
 
       <section className="rounded-[2rem] border border-white/8 bg-panel/88 p-6 shadow-glow">
@@ -280,6 +467,88 @@ export function ServerPage() {
         ) : (
           <div className="rounded-3xl bg-white/5 p-4 text-sm text-slate-400">No service checks attached.</div>
         )}
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="rounded-[2rem] border border-white/8 bg-panel/88 p-6 shadow-glow">
+          <div className="mb-5">
+            <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Containers</p>
+            <h2 className="mt-2 text-2xl font-bold">Latest Docker snapshot</h2>
+            <p className="mt-2 text-sm text-slate-400">Current container state, health, restart count and resource usage sent by the agent.</p>
+          </div>
+
+          {server.current_containers.length ? (
+            <div className="overflow-x-auto">
+              <table className="min-w-[760px] w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-white/8 text-left text-xs uppercase tracking-[0.18em] text-slate-400">
+                    <th className="px-4 py-3 font-medium">Container</th>
+                    <th className="px-4 py-3 font-medium">State</th>
+                    <th className="px-4 py-3 font-medium">Health</th>
+                    <th className="px-4 py-3 font-medium">Restarts</th>
+                    <th className="px-4 py-3 font-medium">CPU</th>
+                    <th className="px-4 py-3 font-medium">Memory</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {server.current_containers.map((container) => (
+                    <tr key={container.id} className="border-b border-white/6 last:border-b-0">
+                      <td className="px-4 py-4">
+                        <div className="font-medium text-slate-100">{container.name}</div>
+                        <div className="mt-1 text-xs text-slate-500">{container.image || container.container_id.slice(0, 12)}</div>
+                      </td>
+                      <td className="px-4 py-4 text-slate-200">{container.state || container.status || "n/a"}</td>
+                      <td className="px-4 py-4 text-slate-200">{container.health_status || "n/a"}</td>
+                      <td className="px-4 py-4 text-slate-200">{container.restart_count ?? "n/a"}</td>
+                      <td className="px-4 py-4 text-slate-200">{formatPercent(container.cpu_percent)}</td>
+                      <td className="px-4 py-4 text-slate-200">
+                        {formatPercent(container.memory_percent)}
+                        <div className="mt-1 text-xs text-slate-500">
+                          {formatMegabytes(container.memory_usage_mb)} / {formatMegabytes(container.memory_limit_mb)}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="rounded-3xl bg-white/5 p-4 text-sm text-slate-400">
+              No container metrics received yet. If this VPS runs Docker, enable container collection in the agent.
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-[2rem] border border-white/8 bg-panel/88 p-6 shadow-glow">
+          <div className="mb-5">
+            <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Diagnostics</p>
+            <h2 className="mt-2 text-2xl font-bold">Recent failure snapshots</h2>
+            <p className="mt-2 text-sm text-slate-400">Retry context, DNS lookup and traceroute details captured during recent failures.</p>
+          </div>
+          <div className="space-y-3">
+            {server.recent_diagnostics.length ? (
+              server.recent_diagnostics.map((snapshot) => (
+                <div key={snapshot.id} className="rounded-3xl border border-white/8 bg-white/5 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-slate-100">{snapshot.headline}</div>
+                      <div className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">
+                        {snapshot.category} {snapshot.check_type ? `| ${snapshot.check_type}` : ""}
+                      </div>
+                    </div>
+                    <StatusBadge status={snapshot.status || "unknown"} />
+                  </div>
+                  <div className="mt-3 text-sm text-slate-400">
+                    {snapshot.details ? JSON.stringify(snapshot.details).slice(0, 220) : "No details"}
+                  </div>
+                  <div className="mt-3 text-xs text-slate-500">{formatDate(snapshot.created_at)}</div>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-3xl bg-white/5 p-4 text-sm text-slate-400">No diagnostic snapshots recorded yet.</div>
+            )}
+          </div>
+        </div>
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">

@@ -25,3 +25,9 @@ class IncidentStatus(str, Enum):
     OPEN = "open"
     RESOLVED = "resolved"
 
+
+class SpeedTestStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"

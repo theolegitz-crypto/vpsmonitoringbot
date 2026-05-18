@@ -25,11 +25,28 @@ main_menu_keyboard = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text=STATUS_BUTTON), KeyboardButton(text=SERVERS_BUTTON)],
         [KeyboardButton(text=ALERTS_BUTTON), KeyboardButton(text=ADD_SERVER_BUTTON)],
-        [KeyboardButton(text=HELP_BUTTON)],
-        [KeyboardButton(text=EXAMPLES_BUTTON)],
+        [KeyboardButton(text=HELP_BUTTON), KeyboardButton(text=EXAMPLES_BUTTON)],
     ],
     resize_keyboard=True,
     input_field_placeholder="Выбери кнопку или введи команду",
+)
+
+
+main_menu_inline_keyboard = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(text="📊 Статус", callback_data="action:status"),
+            InlineKeyboardButton(text="🖥 Серверы", callback_data="action:servers"),
+        ],
+        [
+            InlineKeyboardButton(text="🚨 Алерты", callback_data="action:alerts"),
+            InlineKeyboardButton(text="➕ Добавить сервер", callback_data="action:addserver"),
+        ],
+        [
+            InlineKeyboardButton(text="❓ Помощь", callback_data="action:help"),
+            InlineKeyboardButton(text="📚 Примеры", callback_data="action:examples"),
+        ],
+    ]
 )
 
 
@@ -37,6 +54,11 @@ cancel_keyboard = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text=CANCEL_BUTTON)]],
     resize_keyboard=True,
     input_field_placeholder="Заполни шаг или нажми Отмена",
+)
+
+
+cancel_inline_keyboard = InlineKeyboardMarkup(
+    inline_keyboard=[[InlineKeyboardButton(text=CANCEL_BUTTON, callback_data="action:cancel")]]
 )
 
 
@@ -112,17 +134,17 @@ def server_actions_keyboard(server_id: int, is_muted: bool) -> InlineKeyboardMar
             ],
             [
                 InlineKeyboardButton(text="🔌 Порты", callback_data=f"server:ports:{server_id}"),
-                InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"server:editprompt:{server_id}"),
+                InlineKeyboardButton(text="⚡ Speed", callback_data=f"server:speed:{server_id}"),
             ],
             [
+                InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"server:editprompt:{server_id}"),
                 mute_button,
+            ],
+            [
                 InlineKeyboardButton(text="🗑 Удалить", callback_data=f"server:deleteprompt:{server_id}"),
             ],
             [
-                InlineKeyboardButton(
-                    text="🖥 К списку серверов",
-                    callback_data="picker:detail:0",
-                )
+                InlineKeyboardButton(text="🖥 К списку серверов", callback_data="picker:detail:0"),
             ],
         ]
     )
@@ -151,10 +173,7 @@ def server_edit_field_keyboard(server_id: int) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="Loss crit", callback_data=f"editfield:{server_id}:packet_loss_critical"),
             ],
             [
-                InlineKeyboardButton(
-                    text="⬅️ Назад к серверу",
-                    callback_data=f"server:detail:{server_id}",
-                )
+                InlineKeyboardButton(text="⬅️ Назад к серверу", callback_data=f"server:detail:{server_id}"),
             ],
         ]
     )
@@ -184,10 +203,7 @@ def mute_duration_keyboard(server_id: int) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="1w", callback_data=f"mute:{server_id}:1w"),
             ],
             [
-                InlineKeyboardButton(
-                    text="⬅️ Назад к серверу",
-                    callback_data=f"server:detail:{server_id}",
-                )
+                InlineKeyboardButton(text="⬅️ Назад к серверу", callback_data=f"server:detail:{server_id}"),
             ],
         ]
     )

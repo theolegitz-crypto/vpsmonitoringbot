@@ -148,6 +148,15 @@ export function OverviewPage({ currentUser }) {
     }
   }
 
+  async function handleSpeedTestServer(serverId) {
+    try {
+      await api.runSpeedTest(serverId);
+      await loadOverview();
+    } catch (runError) {
+      setError(runError.message);
+    }
+  }
+
   const rows = useMemo(() => buildMonitorRows(overview?.servers || []), [overview]);
 
   if (loading) {
@@ -209,6 +218,7 @@ export function OverviewPage({ currentUser }) {
                 rows={rows}
                 onRunServer={handleRefreshServer}
                 onRunService={handleRefreshService}
+                onSpeedTestServer={handleSpeedTestServer}
                 onDeleteServer={handleDeleteServer}
               />
             ) : (

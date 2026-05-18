@@ -3,7 +3,16 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.models.enums import CheckType, ServerStatus
-from backend.app.schemas.common import AlertEventRead, CheckResultRead, HistoryPoint, IncidentRead, MetricPoint
+from backend.app.schemas.agent import AgentMetricRead, ContainerMetricRead
+from backend.app.schemas.common import (
+    AlertEventRead,
+    CheckResultRead,
+    DiagnosticSnapshotRead,
+    HistoryPoint,
+    IncidentRead,
+    MetricPoint,
+)
+from backend.app.schemas.speed_test import SpeedTestRead
 from backend.app.schemas.service_check import ServiceCheckRead
 
 
@@ -64,6 +73,8 @@ class ServerRead(ServerBase):
     last_latency_ms: float | None
     last_packet_loss: float | None
     last_jitter_ms: float | None
+    agent_last_seen_at: datetime | None
+    agent_version: str | None
     consecutive_issues: int
     created_at: datetime
     updated_at: datetime | None
@@ -88,6 +99,10 @@ class ServerDetail(ServerRead):
     recent_incidents: list[IncidentRead]
     recent_alerts: list[AlertEventRead]
     latest_results: list[CheckResultRead]
+    latest_agent_metric: AgentMetricRead | None = None
+    current_containers: list[ContainerMetricRead] = Field(default_factory=list)
+    recent_diagnostics: list[DiagnosticSnapshotRead] = Field(default_factory=list)
+    latest_speed_test: SpeedTestRead | None = None
 
 
 class OverviewSummary(BaseModel):

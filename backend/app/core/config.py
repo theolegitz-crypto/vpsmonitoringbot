@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
     scheduler_tick_seconds: int = 30
     run_initial_checks: bool = True
+    cleanup_interval_hours: int = 6
 
     auth_enabled: bool = True
     auth_cookie_name: str = "swagmonitor_session"
@@ -52,6 +53,24 @@ class Settings(BaseSettings):
     default_consecutive_alert_threshold: int = 3
     http_timeout_seconds: int = 5
     ssl_warning_days: int = 21
+    failure_retry_enabled: bool = True
+    failure_retry_attempts: int = 1
+    failure_retry_delay_seconds: int = 3
+    diagnostics_enabled: bool = True
+    traceroute_enabled: bool = True
+    traceroute_max_hops: int = 12
+    traceroute_timeout_seconds: int = 2
+    check_results_retention_days: int = 30
+    check_result_rollup_retention_days: int = 365
+    agent_metrics_retention_days: int = 14
+    container_metrics_retention_days: int = 14
+    diagnostic_retention_days: int = 14
+    speed_test_retention_days: int = 30
+    alert_events_retention_days: int = 90
+    resolved_incident_retention_days: int = 90
+
+    agent_ingest_enabled: bool = True
+    agent_shared_token: str = ""
 
     telegram_bot_token: str = ""
     telegram_admin_chat_ids: str = ""
