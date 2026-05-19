@@ -348,40 +348,66 @@ def compact_output(value, limit=280):
     return text[:limit] + "..."
 
 
-def main():
-    timeout = int(os.environ.get("SWAGMONITOR_SPEEDTEST_TIMEOUT", "180"))
-    speedtest_bin = shutil.which("speedtest")
-    speedtest_cli_bin = shutil.which("speedtest-cli")
-
-    if speedtest_bin:
-        command = [speedtest_bin, "--accept-license", "--accept-gdpr", "--format=json"]
-        parser = parse_ookla
-    elif speedtest_cli_bin:
-        command = [speedtest_cli_bin, "--json"]
-        parser = parse_speedtest_cli
-    else:
-        failure("Neither speedtest nor speedtest-cli is installed on the VPS. Install it with: apt install -y speedtest-cli")
-        return
-
+def run_tool(tool_name, command, parser, timeout):
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
-        failure("Remote speed test timed out")
-        return
+        return None, f"{tool_name} timed out"
 
     if result.returncode != 0:
-        failure(result.stderr.strip() or result.stdout.strip() or "Remote speed test failed")
-        return
+        context = compact_output(result.stderr) or compact_output(result.stdout) or f"{tool_name} failed"
+        return None, context
 
     payload = extract_json_payload(result.stdout)
     if payload is None:
         stdout_preview = compact_output(result.stdout)
         stderr_preview = compact_output(result.stderr)
         context = stdout_preview or stderr_preview or "no output"
-        failure(f"Remote speed test returned invalid JSON. Output: {context}")
+        return None, f"{tool_name} returned invalid JSON. Output: {context}"
+
+    try:
+        return parser(payload), None
+    except Exception as exc:
+        return None, f"{tool_name} payload parse failed: {exc}"
+
+
+def main():
+    timeout = int(os.environ.get("SWAGMONITOR_SPEEDTEST_TIMEOUT", "180"))
+    speedtest_bin = shutil.which("speedtest")
+    speedtest_cli_bin = shutil.which("speedtest-cli")
+
+    candidates = []
+    if speedtest_bin:
+        candidates.append(
+            (
+                "speedtest",
+                [speedtest_bin, "--accept-license", "--accept-gdpr", "--format=json"],
+                parse_ookla,
+            )
+        )
+    if speedtest_cli_bin:
+        candidates.append(
+            (
+                "speedtest-cli",
+                [speedtest_cli_bin, "--json"],
+                parse_speedtest_cli,
+            )
+        )
+
+    if not candidates:
+        failure("Neither speedtest nor speedtest-cli is installed on the VPS. Install it with: apt install -y speedtest-cli")
         return
 
-    print(json.dumps(parser(payload), separators=(",", ":")))
+    errors = []
+    for tool_name, command, parser in candidates:
+        payload, error = run_tool(tool_name, command, parser, timeout)
+        if payload is not None:
+            print(json.dumps(payload, separators=(",", ":")))
+            return
+        if error:
+            errors.append(error)
+
+    failure(" | ".join(errors) if errors else "Remote speed test failed")
 
 
 if __name__ == "__main__":
