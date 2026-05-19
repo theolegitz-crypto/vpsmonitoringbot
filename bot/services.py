@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
@@ -114,6 +115,24 @@ def _safe_speed(value: float | None) -> str:
     if value is None:
         return "n/a"
     return f"{value:.1f} Mbps"
+
+
+def _normalize_speed_test_error(value) -> str:
+    if not value:
+        return "unknown error"
+    if isinstance(value, dict):
+        return value.get("error") or json.dumps(value, ensure_ascii=False)
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith("{") and text.endswith("}"):
+            try:
+                payload = json.loads(text)
+            except json.JSONDecodeError:
+                return text
+            if isinstance(payload, dict):
+                return payload.get("error") or json.dumps(payload, ensure_ascii=False)
+        return text
+    return str(value)
 
 
 def normalize_optional_text(value: str) -> str | None:
@@ -403,7 +422,7 @@ async def server_detail_text_by_id(server_id: int) -> str | None:
         for check in detail.services
     ) or "- сервисные проверки пока не добавлены"
 
-    speed_block = _format_speed_test_block(detail.latest_speed_test)
+    speed_block = _format_speed_test_block_clean(detail.latest_speed_test)
 
     return (
         f"🖥 {detail.name}\n"
@@ -511,7 +530,7 @@ async def speed_test_text_by_id(server_id: int) -> str | None:
         else "⚡ На сервере уже есть незавершённый speed test. Ждём результат SSH-проверки."
     )
 
-    latest_block = _format_speed_test_block(detail.latest_speed_test) if detail else _format_speed_test_block(queued_item)
+    latest_block = _format_speed_test_block_clean(detail.latest_speed_test) if detail else _format_speed_test_block_clean(queued_item)
     return f"{queue_line}\n\n{latest_block}"
 
 
@@ -526,7 +545,7 @@ async def latest_speed_test_text_by_id(server_id: int) -> str | None:
     detail = await get_server_detail(server_id)
     if not detail:
         return None
-    return f"📶 Последний speed test для {detail.name}\n\n{_format_speed_test_block(detail.latest_speed_test)}"
+    return f"📶 Последний speed test для {detail.name}\n\n{_format_speed_test_block_clean(detail.latest_speed_test)}"
 
 
 async def latest_speed_test_text(name: str) -> str | None:
@@ -546,7 +565,7 @@ async def speed_test_history_text_by_id(server_id: int, limit: int = 6) -> str |
         return f"📭 {server.name}: speed test ещё не запускался."
 
     lines = [f"📈 История speed test для {server.name}"]
-    lines.extend(_format_speed_test_history_entry(item) for item in history)
+    lines.extend(_format_speed_test_history_entry_clean(item) for item in history)
     return "\n".join(lines)
 
 
@@ -772,3 +791,51 @@ async def containers_text(name: str) -> str | None:
     if not server:
         return None
     return await containers_text_by_id(server.id)
+
+
+def _format_speed_test_block_clean(speed_test) -> str:
+    if not speed_test:
+        return "⚡ Speed test ещё не запускался."
+
+    if speed_test.status == SpeedTestStatus.PENDING:
+        return (
+            "⚡ Speed test поставлен в очередь.\n"
+            "Backend выполнит задачу по SSH на следующем цикле scheduler."
+        )
+
+    if speed_test.status == SpeedTestStatus.RUNNING:
+        return "⚡ Speed test уже выполняется на сервере."
+
+    if speed_test.status == SpeedTestStatus.FAILED:
+        return (
+            "⚡ Последний speed test завершился ошибкой.\n"
+            f"Ошибка: {_normalize_speed_test_error(speed_test.error)}"
+        )
+
+    return (
+        "⚡ Последний speed test\n"
+        f"Провайдер: {speed_test.provider_name or 'n/a'}\n"
+        f"Локация: {speed_test.provider_location or 'n/a'}\n"
+        f"IP: {speed_test.external_ip or 'n/a'}\n"
+        f"Download: {_safe_speed(speed_test.download_mbps)}\n"
+        f"Upload: {_safe_speed(speed_test.upload_mbps)}\n"
+        f"Ping: {_safe_latency(speed_test.ping_ms)}\n"
+        f"Завершён: {speed_test.completed_at.isoformat() if speed_test.completed_at else 'n/a'}"
+    )
+
+
+def _format_speed_test_history_entry_clean(speed_test) -> str:
+    created_at = speed_test.completed_at or speed_test.started_at or speed_test.created_at
+    status = speed_test.status.value.upper()
+    if speed_test.status == SpeedTestStatus.FAILED:
+        return (
+            f"- [{created_at:%Y-%m-%d %H:%M}] {status} | "
+            f"Ошибка: {_normalize_speed_test_error(speed_test.error)}"
+        )
+
+    return (
+        f"- [{created_at:%Y-%m-%d %H:%M}] {status} | "
+        f"↓ {_safe_speed(speed_test.download_mbps)} | "
+        f"↑ {_safe_speed(speed_test.upload_mbps)} | "
+        f"ping {_safe_latency(speed_test.ping_ms)}"
+    )

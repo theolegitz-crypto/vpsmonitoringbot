@@ -405,7 +405,7 @@ class SshRemoteService:
                 "SWAGMONITOR_SPEEDTEST_TIMEOUT": str(settings.ssh_speed_test_timeout_seconds),
             },
         )
-        return AgentSpeedTestCompleteRequest.model_validate(payload)
+        return self._normalize_speed_test_payload(payload)
 
     async def _run_remote_json(
         self,
@@ -466,6 +466,28 @@ class SshRemoteService:
             if isinstance(payload, dict):
                 return payload
         raise RuntimeError("Remote command did not return valid JSON")
+
+    @staticmethod
+    def _normalize_speed_test_payload(payload: dict[str, Any]) -> AgentSpeedTestCompleteRequest:
+        if "status" in payload:
+            error = payload.get("error")
+            if isinstance(error, dict):
+                payload = {**payload, "error": error.get("error") or json.dumps(error, ensure_ascii=False)}
+            return AgentSpeedTestCompleteRequest.model_validate(payload)
+
+        raw_error = payload.get("error") if isinstance(payload, dict) else None
+        if isinstance(raw_error, dict):
+            error_text = raw_error.get("error") or json.dumps(raw_error, ensure_ascii=False)
+        elif raw_error:
+            error_text = str(raw_error)
+        else:
+            error_text = "Remote speed test failed"
+
+        return AgentSpeedTestCompleteRequest(
+            status="failed",
+            error=error_text[:500],
+            details={"source": "ssh", "raw": payload},
+        )
 
     @staticmethod
     def _build_remote_python_command(script: str, environment: dict[str, str]) -> str:

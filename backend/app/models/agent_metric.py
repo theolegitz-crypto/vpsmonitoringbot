@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, JSON, String, func
+from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Integer, JSON, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.db.base import Base
@@ -24,9 +24,9 @@ class AgentMetric(Base):
     load_1: Mapped[float | None] = mapped_column(Float, nullable=True)
     load_5: Mapped[float | None] = mapped_column(Float, nullable=True)
     load_15: Mapped[float | None] = mapped_column(Float, nullable=True)
-    net_rx_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    net_tx_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    uptime_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    net_rx_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    net_tx_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    uptime_seconds: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
