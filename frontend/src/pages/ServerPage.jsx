@@ -70,8 +70,8 @@ export function ServerPage() {
     async () => {
       await loadServer({ silent: true });
     },
-    15000,
-    [serverId],
+    isEditing ? 0 : 15000,
+    [serverId, isEditing],
   );
 
   async function handleMuteToggle() {
@@ -250,6 +250,7 @@ export function ServerPage() {
 
         <div className="mt-5 rounded-3xl border border-white/8 bg-white/5 px-4 py-3 text-sm text-slate-300">
           <div>Auto refresh: every 15 seconds</div>
+          <div className="mt-1">{isEditing ? "Auto refresh paused while editing server settings" : "Auto refresh is active"}</div>
           <div className="mt-1">Last UI update: {lastClientRefreshAt ? formatDate(lastClientRefreshAt) : "just now"}</div>
           <div className="mt-1">{refreshing ? "Refreshing..." : "Waiting for next refresh"}</div>
         </div>

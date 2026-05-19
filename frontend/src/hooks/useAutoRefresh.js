@@ -3,6 +3,10 @@ import { useEffect } from "react";
 
 export function useAutoRefresh(refreshFn, intervalMs, deps = []) {
   useEffect(() => {
+    if (!intervalMs || intervalMs <= 0) {
+      return undefined;
+    }
+
     let timeoutId = null;
     let stopped = false;
 
@@ -26,6 +30,5 @@ export function useAutoRefresh(refreshFn, intervalMs, deps = []) {
         window.clearTimeout(timeoutId);
       }
     };
-  }, deps);
+  }, [intervalMs, ...deps]);
 }
-

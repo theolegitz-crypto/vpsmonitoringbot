@@ -85,6 +85,19 @@ def _progress_stage(speed_test: SpeedTestResult) -> str:
     return _stage_title(details.get("progress_stage"))
 
 
+def _ssh_debug_block(server: Server) -> str:
+    host = (server.ssh_host or server.address or "").strip() or "not set"
+    username = (server.ssh_username or "").strip() or "not set"
+    password_state = "saved" if server.ssh_password_configured else "not saved"
+    enabled_state = "on" if server.ssh_enabled else "off"
+    return (
+        f"SSH toggle: {enabled_state}\n"
+        f"SSH host: {host}\n"
+        f"SSH user: {username}\n"
+        f"SSH password: {password_state}"
+    )
+
+
 def _active_speed_test_text(
     server_name: str,
     speed_test: SpeedTestResult,
@@ -171,11 +184,20 @@ async def queue_speed_test_for_bot(server_id: int) -> tuple[str | None, int | No
     if not server:
         return None, None, False
 
-    if not server.ssh_enabled:
+    if not server.ssh_enabled or not server.ssh_username or not server.ssh_password_configured:
+        problems = []
+        if not server.ssh_enabled:
+            problems.append("SSH disabled")
+        if not server.ssh_username:
+            problems.append("SSH username missing")
+        if not server.ssh_password_configured:
+            problems.append("SSH password missing")
         text = (
             f"⚡ {server.name}\n\n"
             "Speed test по SSH сейчас недоступен.\n"
-            "Открой сервер в панели, включи SSH и заполни логин с паролем."
+            f"Причина: {', '.join(problems)}\n\n"
+            f"{_ssh_debug_block(server)}\n\n"
+            "Открой сервер в панели, сохрани SSH-настройки и попробуй ещё раз."
         )
         return text, None, False
 
