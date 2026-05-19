@@ -35,6 +35,7 @@ class SpeedTestService:
         self._schedule_lock = asyncio.Lock()
         self._process_lock = asyncio.Lock()
         self.remote = SshRemoteService()
+        self._active_speed_tests: dict[int, asyncio.Task] = {}
 
     async def queue_speed_test(self, server_id: int) -> tuple[SpeedTestResult, bool]:
         async with self.session_factory() as session:
@@ -56,7 +57,15 @@ class SpeedTestService:
                 await session.commit()
                 return existing, False
 
-            item = SpeedTestResult(server_id=server_id, status=SpeedTestStatus.PENDING)
+            item = SpeedTestResult(
+                server_id=server_id,
+                status=SpeedTestStatus.PENDING,
+                details={
+                    "progress_percent": 0,
+                    "progress_stage": "Queued",
+                    "execution_mode": "ssh" if server.ssh_enabled else "agent",
+                },
+            )
             server.last_speed_test_requested_at = requested_at
             session.add(item)
             await session.commit()
@@ -101,7 +110,17 @@ class SpeedTestService:
                             existing += 1
                             continue
 
-                        session.add(SpeedTestResult(server_id=server.id, status=SpeedTestStatus.PENDING))
+                        session.add(
+                            SpeedTestResult(
+                                server_id=server.id,
+                                status=SpeedTestStatus.PENDING,
+                                details={
+                                    "progress_percent": 0,
+                                    "progress_stage": "Queued",
+                                    "execution_mode": "ssh" if server.ssh_enabled else "agent",
+                                },
+                            )
+                        )
                         queued += 1
 
                     await session.commit()
@@ -152,18 +171,16 @@ class SpeedTestService:
 
                 processed += 1
                 _, server = claimed
+                task = asyncio.create_task(self._execute_ssh_speed_test(speed_test_id, server))
+                self._active_speed_tests[speed_test_id] = task
                 try:
-                    payload = await self.remote.run_speed_test(server)
-                except Exception as exc:
-                    payload = AgentSpeedTestCompleteRequest(
-                        status=SpeedTestStatus.FAILED,
-                        error=str(exc)[:500],
-                        details={"source": "ssh"},
-                    )
-
-                result = await self.complete(speed_test_id, payload)
+                    result = await task
+                finally:
+                    self._active_speed_tests.pop(speed_test_id, None)
                 if result.status == SpeedTestStatus.COMPLETED:
                     completed += 1
+                elif result.status == SpeedTestStatus.CANCELLED:
+                    logger.info("SSH speed test %s was cancelled", speed_test_id)
                 else:
                     failed += 1
 
@@ -175,6 +192,41 @@ class SpeedTestService:
                     failed,
                 )
             return {"processed": processed, "completed": completed, "failed": failed}
+
+    async def cancel_speed_test(self, speed_test_id: int) -> tuple[bool, str]:
+        async with self.session_factory() as session:
+            item = await session.get(SpeedTestResult, speed_test_id)
+            if not item:
+                return False, "Speed test not found"
+
+            if item.status == SpeedTestStatus.PENDING:
+                item.status = SpeedTestStatus.CANCELLED
+                current_details = dict(item.details or {})
+                current_details["progress_percent"] = current_details.get("progress_percent", 0)
+                current_details["progress_stage"] = "Cancelled"
+                current_details["cancel_requested"] = True
+                item.details = current_details
+                item.error = "Cancelled by user"
+                item.completed_at = datetime.now(timezone.utc)
+                await session.commit()
+                return True, "queued"
+
+            if item.status == SpeedTestStatus.RUNNING:
+                current_details = dict(item.details or {})
+                current_details["cancel_requested"] = True
+                current_details["progress_stage"] = "Cancelling"
+                item.details = current_details
+                await session.commit()
+
+                task = self._active_speed_tests.get(speed_test_id)
+                if task and not task.done():
+                    task.cancel()
+                return True, "running"
+
+            if item.status == SpeedTestStatus.CANCELLED:
+                return False, "already_cancelled"
+
+            return False, item.status.value
 
     async def claim_next(self, server_id: int | None, server_name: str | None) -> SpeedTestResult | None:
         async with self.session_factory() as session:
@@ -218,13 +270,39 @@ class SpeedTestService:
             item.upload_mbps = payload.upload_mbps
             item.ping_ms = payload.ping_ms
             item.jitter_ms = payload.jitter_ms
-            item.details = payload.details
+            merged_details = dict(item.details or {})
+            merged_details.update(payload.details or {})
+            merged_details["progress_percent"] = 100
+            merged_details["progress_stage"] = (
+                "Completed" if payload.status == SpeedTestStatus.COMPLETED else "Failed"
+            )
+            item.details = merged_details
             item.error = payload.error
             item.completed_at = datetime.now(timezone.utc)
             if item.started_at is None:
                 item.started_at = item.completed_at
 
             await self._maybe_emit_speed_events(session, server, item)
+            await session.commit()
+            await session.refresh(item)
+            return item
+
+    async def mark_cancelled(self, speed_test_id: int, reason: str = "Cancelled by user") -> SpeedTestResult:
+        async with self.session_factory() as session:
+            item = await session.get(SpeedTestResult, speed_test_id)
+            if not item:
+                raise LookupError("Speed test task not found")
+
+            item.status = SpeedTestStatus.CANCELLED
+            merged_details = dict(item.details or {})
+            merged_details["progress_percent"] = min(int(merged_details.get("progress_percent") or 0), 99)
+            merged_details["progress_stage"] = "Cancelled"
+            merged_details["cancel_requested"] = True
+            item.details = merged_details
+            item.error = reason[:500]
+            item.completed_at = datetime.now(timezone.utc)
+            if item.started_at is None:
+                item.started_at = item.completed_at
             await session.commit()
             await session.refresh(item)
             return item
@@ -255,6 +333,40 @@ class SpeedTestService:
             ).all()
             return list(items)
 
+    async def get_by_id(self, speed_test_id: int) -> SpeedTestResult | None:
+        async with self.session_factory() as session:
+            return await session.get(SpeedTestResult, speed_test_id)
+
+    async def update_progress(
+        self,
+        speed_test_id: int,
+        progress_percent: int,
+        progress_stage: str,
+        *,
+        details: dict | None = None,
+    ) -> None:
+        async with self.session_factory() as session:
+            item = await session.get(SpeedTestResult, speed_test_id)
+            if not item:
+                return
+
+            current_details = dict(item.details or {})
+            current_details["progress_percent"] = max(0, min(int(progress_percent), 100))
+            current_details["progress_stage"] = progress_stage
+            if details:
+                current_details.update(details)
+            item.details = current_details
+            await session.commit()
+
+    async def is_cancel_requested(self, speed_test_id: int) -> bool:
+        async with self.session_factory() as session:
+            item = await session.get(SpeedTestResult, speed_test_id)
+            if not item:
+                return True
+            if item.status == SpeedTestStatus.CANCELLED:
+                return True
+            return bool((item.details or {}).get("cancel_requested"))
+
     async def _claim_speed_test_for_processing(
         self,
         speed_test_id: int,
@@ -270,10 +382,55 @@ class SpeedTestService:
 
             item.status = SpeedTestStatus.RUNNING
             item.started_at = datetime.now(timezone.utc)
+            current_details = dict(item.details or {})
+            current_details.update(
+                {
+                    "progress_percent": 5,
+                    "progress_stage": "Waiting for SSH connection",
+                    "execution_mode": "ssh",
+                }
+            )
+            item.details = current_details
             await session.commit()
             await session.refresh(item)
             await session.refresh(server)
             return item, server
+
+    async def _execute_ssh_speed_test(self, speed_test_id: int, server: Server) -> SpeedTestResult:
+        try:
+            payload = await self.remote.run_speed_test(
+                server,
+                progress_callback=lambda percent, stage: self._update_progress_and_check_cancel(
+                    speed_test_id,
+                    percent,
+                    stage,
+                    details={"execution_mode": "ssh"},
+                ),
+                should_cancel=lambda: self.is_cancel_requested(speed_test_id),
+            )
+        except asyncio.CancelledError:
+            return await self.mark_cancelled(speed_test_id)
+        except Exception as exc:
+            payload = AgentSpeedTestCompleteRequest(
+                status=SpeedTestStatus.FAILED,
+                error=str(exc)[:500],
+                details={"source": "ssh", "execution_mode": "ssh"},
+            )
+        if await self.is_cancel_requested(speed_test_id):
+            return await self.mark_cancelled(speed_test_id)
+        return await self.complete(speed_test_id, payload)
+
+    async def _update_progress_and_check_cancel(
+        self,
+        speed_test_id: int,
+        progress_percent: int,
+        progress_stage: str,
+        *,
+        details: dict | None = None,
+    ) -> None:
+        await self.update_progress(speed_test_id, progress_percent, progress_stage, details=details)
+        if await self.is_cancel_requested(speed_test_id):
+            raise asyncio.CancelledError
 
     @staticmethod
     async def _resolve_server(

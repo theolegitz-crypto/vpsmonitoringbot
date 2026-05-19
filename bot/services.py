@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 
 from backend.app.core.config import settings
 from backend.app.db.session import AsyncSessionLocal
-from backend.app.models import AlertEvent, CheckType, Server, ServerStatus, ServiceCheck, SpeedTestStatus
+from backend.app.models import AlertEvent, CheckType, Server, ServerStatus, ServiceCheck, SpeedTestResult, SpeedTestStatus
 from backend.app.services.dashboard import DashboardService
 from backend.app.services.monitoring import MonitoringService
 from backend.app.services.server_management import apply_server_updates

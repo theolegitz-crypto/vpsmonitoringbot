@@ -325,7 +325,7 @@ def main():
         command = [speedtest_cli_bin, "--json"]
         parser = parse_speedtest_cli
     else:
-        failure("Neither speedtest nor speedtest-cli is installed on the VPS")
+        failure("Neither speedtest nor speedtest-cli is installed on the VPS. Install it with: apt install -y speedtest-cli")
         return
 
     try:
@@ -396,7 +396,9 @@ class SshRemoteService:
             recorded_at=datetime.now(timezone.utc),
         )
 
-    async def run_speed_test(self, server) -> AgentSpeedTestCompleteRequest:
+    async def run_speed_test(self, server, progress_callback=None, should_cancel=None) -> AgentSpeedTestCompleteRequest:
+        if progress_callback:
+            await progress_callback(12, "Preparing SSH speed test")
         payload = await self._run_remote_json(
             server,
             REMOTE_SPEEDTEST_SCRIPT,
@@ -404,8 +406,16 @@ class SshRemoteService:
             environment={
                 "SWAGMONITOR_SPEEDTEST_TIMEOUT": str(settings.ssh_speed_test_timeout_seconds),
             },
+            progress_callback=progress_callback,
+            should_cancel=should_cancel,
         )
-        return self._normalize_speed_test_payload(payload)
+        result = self._normalize_speed_test_payload(payload)
+        if progress_callback:
+            await progress_callback(
+                100,
+                "Completed" if result.status == "completed" else "Failed",
+            )
+        return result
 
     async def _run_remote_json(
         self,
@@ -414,6 +424,8 @@ class SshRemoteService:
         *,
         timeout_seconds: int,
         environment: dict[str, str],
+        progress_callback=None,
+        should_cancel=None,
     ) -> dict[str, Any]:
         asyncssh = self._load_asyncssh()
         password = self.decrypt_password(server.ssh_password_encrypted)
@@ -438,12 +450,34 @@ class SshRemoteService:
             connect_kwargs["known_hosts"] = None
 
         command = self._build_remote_python_command(script, environment)
+        if progress_callback:
+            await progress_callback(20, "Connecting to the VPS")
         connection = await asyncssh.connect(**connect_kwargs)
-        async with connection:
-            result = await asyncio.wait_for(
-                connection.run(command, check=False),
-                timeout=timeout_seconds + settings.ssh_connect_timeout_seconds,
-            )
+        progress_task = None
+        try:
+            async with connection:
+                if progress_callback:
+                    await progress_callback(32, "Starting remote command")
+                    progress_task = asyncio.create_task(
+                        self._simulate_speedtest_progress(progress_callback, timeout_seconds)
+                    )
+                run_task = asyncio.create_task(connection.run(command, check=False))
+                try:
+                    result = await self._await_remote_result(
+                        run_task,
+                        timeout_seconds + settings.ssh_connect_timeout_seconds,
+                        should_cancel=should_cancel,
+                    )
+                finally:
+                    if not run_task.done():
+                        run_task.cancel()
+        finally:
+            if progress_task:
+                progress_task.cancel()
+                try:
+                    await progress_task
+                except asyncio.CancelledError:
+                    pass
 
         stdout = (result.stdout or "").strip()
         stderr = (result.stderr or "").strip()
@@ -488,6 +522,39 @@ class SshRemoteService:
             error=error_text[:500],
             details={"source": "ssh", "raw": payload},
         )
+
+    @staticmethod
+    async def _simulate_speedtest_progress(progress_callback, timeout_seconds: int) -> None:
+        elapsed = 0
+        step = 3
+        while True:
+            await asyncio.sleep(step)
+            elapsed += step
+            ratio = min(elapsed / max(timeout_seconds, 1), 0.98)
+            if ratio < 0.18:
+                percent = 40
+                stage = "Testing latency"
+            elif ratio < 0.72:
+                percent = min(78, 40 + int(((ratio - 0.18) / 0.54) * 38))
+                stage = "Measuring download"
+            else:
+                percent = min(95, 78 + int(((ratio - 0.72) / 0.26) * 17))
+                stage = "Measuring upload"
+            await progress_callback(percent, stage)
+
+    @staticmethod
+    async def _await_remote_result(run_task, timeout_seconds: int, *, should_cancel=None):
+        started = asyncio.get_running_loop().time()
+        while True:
+            if run_task.done():
+                return await run_task
+            if should_cancel and await should_cancel():
+                run_task.cancel()
+                raise asyncio.CancelledError
+            if asyncio.get_running_loop().time() - started > timeout_seconds:
+                run_task.cancel()
+                raise asyncio.TimeoutError
+            await asyncio.sleep(1)
 
     @staticmethod
     def _build_remote_python_command(script: str, environment: dict[str, str]) -> str:

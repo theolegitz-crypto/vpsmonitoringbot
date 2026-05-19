@@ -1,7 +1,10 @@
+import asyncio
+
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import CallbackQuery, ForceReply, Message, ReplyKeyboardRemove
 
 from bot.access import describe_telegram_context, ensure_callback_allowed, ensure_message_allowed
 from bot.keyboards import (
@@ -21,6 +24,12 @@ from bot.keyboards import (
     server_delete_confirm_keyboard,
     server_edit_field_keyboard,
     server_picker_keyboard,
+)
+from bot.speed_live import (
+    queue_speed_test_for_bot,
+    queue_speed_test_for_bot_by_name,
+    speed_test_progress_text_by_id,
+    tracking_window_seconds,
 )
 from bot.services import (
     alerts_text,
@@ -132,6 +141,18 @@ def cancel_markup_for(message: Message):
     return cancel_keyboard if message.chat.type == "private" else cancel_inline_keyboard
 
 
+def wizard_markup_for(message: Message):
+    if message.chat.type == "private":
+        return cancel_keyboard
+    return ForceReply(selective=True, input_field_placeholder="Ответь reply на это сообщение")
+
+
+def wizard_hint_for(message: Message) -> str:
+    if message.chat.type == "private":
+        return ""
+    return "\n\nВ topic или группе отвечай именно reply на это сообщение, иначе Telegram может не передать текст боту."
+
+
 async def send_server_picker(message: Message, action: str, page: int = 0) -> None:
     servers = await list_servers_for_picker()
     if not servers:
@@ -178,6 +199,39 @@ async def render_server_action_text(callback: CallbackQuery, server_id: int, tex
     )
 
 
+async def track_speed_test_message(message: Message, speed_test_id: int) -> None:
+    last_text = None
+    attempts = max(40, tracking_window_seconds() // 3)
+    for _ in range(attempts):
+        text, done = await speed_test_progress_text_by_id(speed_test_id)
+        if text != last_text:
+            try:
+                await message.edit_text(text)
+            except TelegramBadRequest as exc:
+                error_text = str(exc).lower()
+                if "message is not modified" not in error_text:
+                    break
+            last_text = text
+        if done:
+            break
+        await asyncio.sleep(3)
+
+
+async def start_speed_test_tracking_message(message: Message, *, server_id: int | None = None, server_name: str | None = None) -> None:
+    if server_id is not None:
+        text, speed_test_id, should_track = await queue_speed_test_for_bot(server_id)
+    else:
+        text, speed_test_id, should_track = await queue_speed_test_for_bot_by_name(server_name or "")
+
+    if not text:
+        await message.answer("❌ Сервер не найден")
+        return
+
+    progress_message = await message.answer(text)
+    if speed_test_id and should_track:
+        asyncio.create_task(track_speed_test_message(progress_message, speed_test_id))
+
+
 async def start_add_server_flow(message: Message, state: FSMContext) -> None:
     await state.clear()
     await state.set_state(AddServerStates.waiting_for_name)
@@ -185,8 +239,8 @@ async def start_add_server_flow(message: Message, state: FSMContext) -> None:
         "➕ Добавление сервера\n\n"
         "Шаг 1 из 6.\n"
         "Введи имя сервера.\n"
-        "Пример: `vps-germany-1`",
-        reply_markup=cancel_markup_for(message),
+        f"Пример: `vps-germany-1`{wizard_hint_for(message)}",
+        reply_markup=wizard_markup_for(message),
         parse_mode="Markdown",
     )
 
@@ -203,8 +257,8 @@ async def start_edit_server_field_flow(
     await state.set_state(EditServerStates.waiting_for_value)
     await state.update_data(server_id=server_id, field=field)
     await message.answer(
-        f"✏️ Редактирование поля: {meta['label']}\n\n{meta['prompt']}",
-        reply_markup=cancel_markup_for(message),
+        f"✏️ Редактирование поля: {meta['label']}\n\n{meta['prompt']}{wizard_hint_for(message)}",
+        reply_markup=wizard_markup_for(message),
         parse_mode="Markdown",
     )
 
@@ -474,14 +528,18 @@ async def add_server_name_step(message: Message, state: FSMContext) -> None:
         return
     name = (message.text or "").strip()
     if len(name) < 2:
-        await message.answer("Имя слишком короткое. Введи нормальное имя сервера.")
+        await message.answer(
+            "Имя слишком короткое. Введи нормальное имя сервера.",
+            reply_markup=wizard_markup_for(message),
+        )
         return
     await state.update_data(name=name)
     await state.set_state(AddServerStates.waiting_for_address)
     await message.answer(
         "Шаг 2 из 6.\n"
         "Введи IP или домен сервера.\n"
-        "Пример: `203.0.113.10` или `vps.example.com`",
+        f"Пример: `203.0.113.10` или `vps.example.com`{wizard_hint_for(message)}",
+        reply_markup=wizard_markup_for(message),
         parse_mode="Markdown",
     )
 
@@ -492,13 +550,17 @@ async def add_server_address_step(message: Message, state: FSMContext) -> None:
         return
     address = (message.text or "").strip()
     if len(address) < 3:
-        await message.answer("Адрес выглядит слишком коротким. Попробуй ещё раз.")
+        await message.answer(
+            "Адрес выглядит слишком коротким. Попробуй ещё раз.",
+            reply_markup=wizard_markup_for(message),
+        )
         return
     await state.update_data(address=address)
     await state.set_state(AddServerStates.waiting_for_description)
     await message.answer(
         "Шаг 3 из 6.\n"
-        "Введи описание сервера или отправь `-`, если описание не нужно.",
+        f"Введи описание сервера или отправь `-`, если описание не нужно.{wizard_hint_for(message)}",
+        reply_markup=wizard_markup_for(message),
         parse_mode="Markdown",
     )
 
@@ -512,7 +574,8 @@ async def add_server_description_step(message: Message, state: FSMContext) -> No
     await message.answer(
         "Шаг 4 из 6.\n"
         "Введи URL сайта для HTTP-проверки или `-`, если не нужно.\n"
-        "Пример: `https://example.com`",
+        f"Пример: `https://example.com`{wizard_hint_for(message)}",
+        reply_markup=wizard_markup_for(message),
         parse_mode="Markdown",
     )
 
@@ -526,7 +589,8 @@ async def add_server_website_step(message: Message, state: FSMContext) -> None:
     await message.answer(
         "Шаг 5 из 6.\n"
         "Введи TCP-порты через запятую или `-`, если не нужно.\n"
-        "Пример: `22,80,443,5432`",
+        f"Пример: `22,80,443,5432`{wizard_hint_for(message)}",
+        reply_markup=wizard_markup_for(message),
         parse_mode="Markdown",
     )
 
@@ -538,14 +602,15 @@ async def add_server_ports_step(message: Message, state: FSMContext) -> None:
     try:
         ports = parse_ports_input(message.text or "")
     except ValueError as exc:
-        await message.answer(str(exc))
+        await message.answer(str(exc), reply_markup=wizard_markup_for(message))
         return
     await state.update_data(tcp_ports=ports)
     await state.set_state(AddServerStates.waiting_for_ssl_domain)
     await message.answer(
         "Шаг 6 из 6.\n"
         "Введи домен для SSL-проверки или `-`, если не нужно.\n"
-        "Пример: `example.com`",
+        f"Пример: `example.com`{wizard_hint_for(message)}",
+        reply_markup=wizard_markup_for(message),
         parse_mode="Markdown",
     )
 

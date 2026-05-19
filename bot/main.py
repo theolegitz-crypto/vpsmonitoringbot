@@ -6,6 +6,8 @@ from aiogram.types import BotCommand
 
 from backend.app.core.config import settings
 from bot.handlers import router
+from bot.speed_handlers import router as speed_router
+from bot.ssh_live_handlers import router as ssh_live_router
 
 
 logging.basicConfig(level=logging.INFO)
@@ -41,6 +43,8 @@ async def main() -> None:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is not set")
 
     dispatcher = Dispatcher()
+    dispatcher.include_router(ssh_live_router)
+    dispatcher.include_router(speed_router)
     dispatcher.include_router(router)
 
     async with Bot(token=settings.telegram_bot_token) as bot:
