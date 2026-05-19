@@ -313,6 +313,41 @@ def failure(message):
     print(json.dumps({"status": "failed", "error": message}, separators=(",", ":")))
 
 
+def extract_json_payload(raw_output):
+    text = (raw_output or "").strip()
+    if not text:
+        return None
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for line in reversed(lines):
+        try:
+            return json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        candidate = text[start : end + 1]
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def compact_output(value, limit=280):
+    text = " ".join((value or "").split())
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "..."
+
+
 def main():
     timeout = int(os.environ.get("SWAGMONITOR_SPEEDTEST_TIMEOUT", "180"))
     speedtest_bin = shutil.which("speedtest")
@@ -338,10 +373,12 @@ def main():
         failure(result.stderr.strip() or result.stdout.strip() or "Remote speed test failed")
         return
 
-    try:
-        payload = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        failure("Remote speed test returned invalid JSON")
+    payload = extract_json_payload(result.stdout)
+    if payload is None:
+        stdout_preview = compact_output(result.stdout)
+        stderr_preview = compact_output(result.stderr)
+        context = stdout_preview or stderr_preview or "no output"
+        failure(f"Remote speed test returned invalid JSON. Output: {context}")
         return
 
     print(json.dumps(parser(payload), separators=(",", ":")))
@@ -452,7 +489,12 @@ class SshRemoteService:
         command = self._build_remote_python_command(script, environment)
         if progress_callback:
             await progress_callback(20, "Connecting to the VPS")
-        connection = await asyncssh.connect(**connect_kwargs)
+        try:
+            connection = await asyncssh.connect(**connect_kwargs)
+        except Exception as exc:
+            raise RuntimeError(
+                f"SSH connection to {host}:{server.ssh_port or 22} failed for {server.name}: {exc}"
+            ) from exc
         progress_task = None
         try:
             async with connection:

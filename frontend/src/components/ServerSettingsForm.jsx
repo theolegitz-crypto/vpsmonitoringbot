@@ -210,14 +210,17 @@ export function ServerSettingsForm({ server, busy, onSubmit, onCancel }) {
           <span>Enable SSH metrics and remote speed tests</span>
         </label>
         <label className="grid gap-2 text-sm">
-          <span className="text-slate-300">SSH host</span>
+          <span className="text-slate-300">SSH host or IP (optional)</span>
           <input
             name="ssh_host"
             value={form.ssh_host}
             onChange={handleChange}
-            placeholder="Leave blank to reuse the monitor address"
+            placeholder={`Leave blank to reuse ${server.address || "the monitor address"}`}
             className="rounded-2xl border border-white/10 bg-slate-950/30 px-4 py-3 text-sm outline-none transition focus:border-accent"
           />
+          <span className="text-xs text-slate-500">
+            Example: <code>{server.address || "195.133.84.130"}</code> or <code>host.example.com</code>. Do not put the SSH username here.
+          </span>
         </label>
       </div>
 
@@ -241,6 +244,7 @@ export function ServerSettingsForm({ server, busy, onSubmit, onCancel }) {
             name="ssh_username"
             value={form.ssh_username}
             onChange={handleChange}
+            placeholder="root"
             className="rounded-2xl border border-white/10 bg-slate-950/30 px-4 py-3 text-sm outline-none transition focus:border-accent"
           />
         </label>
