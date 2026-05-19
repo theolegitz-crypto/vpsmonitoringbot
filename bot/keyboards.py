@@ -1,11 +1,6 @@
 from math import ceil
 
-from aiogram.types import (
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    KeyboardButton,
-    ReplyKeyboardMarkup,
-)
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 
 from backend.app.models.enums import ServerStatus
 
@@ -91,15 +86,11 @@ def server_picker_keyboard(servers: list, action: str, page: int = 0) -> InlineK
 
     navigation: list[InlineKeyboardButton] = []
     if page > 0:
-        navigation.append(
-            InlineKeyboardButton(text="⬅️ Назад", callback_data=f"picker:{action}:{page - 1}")
-        )
+        navigation.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"picker:{action}:{page - 1}"))
     if total_pages > 1:
         navigation.append(InlineKeyboardButton(text=f"{page + 1}/{total_pages}", callback_data="noop"))
     if page < total_pages - 1:
-        navigation.append(
-            InlineKeyboardButton(text="Вперёд ➡️", callback_data=f"picker:{action}:{page + 1}")
-        )
+        navigation.append(InlineKeyboardButton(text="Вперёд ➡️", callback_data=f"picker:{action}:{page + 1}"))
     if navigation:
         rows.append(navigation)
 
@@ -115,15 +106,9 @@ def server_picker_keyboard(servers: list, action: str, page: int = 0) -> InlineK
 
 def server_actions_keyboard(server_id: int, is_muted: bool) -> InlineKeyboardMarkup:
     mute_button = (
-        InlineKeyboardButton(
-            text="🔔 Включить уведомления",
-            callback_data=f"server:unmute:{server_id}",
-        )
+        InlineKeyboardButton(text="🔔 Включить уведомления", callback_data=f"server:unmute:{server_id}")
         if is_muted
-        else InlineKeyboardButton(
-            text="🔕 Приглушить",
-            callback_data=f"server:muteprompt:{server_id}",
-        )
+        else InlineKeyboardButton(text="🔕 Приглушить", callback_data=f"server:muteprompt:{server_id}")
     )
 
     return InlineKeyboardMarkup(
@@ -135,6 +120,10 @@ def server_actions_keyboard(server_id: int, is_muted: bool) -> InlineKeyboardMar
             [
                 InlineKeyboardButton(text="🔌 Порты", callback_data=f"server:ports:{server_id}"),
                 InlineKeyboardButton(text="⚡ Speed", callback_data=f"server:speed:{server_id}"),
+            ],
+            [
+                InlineKeyboardButton(text="🧠 Метрики", callback_data=f"server:metrics:{server_id}"),
+                InlineKeyboardButton(text="🐳 Контейнеры", callback_data=f"server:containers:{server_id}"),
             ],
             [
                 InlineKeyboardButton(text="📶 Последний speed", callback_data=f"server:speedlast:{server_id}"),
@@ -167,7 +156,7 @@ def server_edit_field_keyboard(server_id: int) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="Alert порог",
+                    text="Порог алерта",
                     callback_data=f"editfield:{server_id}:consecutive_alert_threshold",
                 ),
                 InlineKeyboardButton(

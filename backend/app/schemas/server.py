@@ -26,11 +26,18 @@ class ServerBase(BaseModel):
     packet_loss_critical: float = 20.0
     check_interval_seconds: int = 60
     consecutive_alert_threshold: int = 3
+    ssh_enabled: bool = False
+    ssh_host: str | None = None
+    ssh_port: int = 22
+    ssh_username: str | None = None
+    ssh_metrics_interval_seconds: int = 300
+    ssh_collect_docker: bool = True
     speed_test_enabled: bool = False
     speed_test_interval_seconds: int = 21600
 
 
 class ServerCreate(ServerBase):
+    ssh_password: str | None = None
     service_checks: list["ServiceCheckPayload"] = Field(default_factory=list)
 
 
@@ -44,6 +51,13 @@ class ServerUpdate(BaseModel):
     packet_loss_critical: float | None = None
     check_interval_seconds: int | None = None
     consecutive_alert_threshold: int | None = None
+    ssh_enabled: bool | None = None
+    ssh_host: str | None = None
+    ssh_port: int | None = None
+    ssh_username: str | None = None
+    ssh_password: str | None = None
+    ssh_metrics_interval_seconds: int | None = None
+    ssh_collect_docker: bool | None = None
     speed_test_enabled: bool | None = None
     speed_test_interval_seconds: int | None = None
     muted_until: datetime | None = None
@@ -79,6 +93,14 @@ class ServerRead(ServerBase):
     last_jitter_ms: float | None
     agent_last_seen_at: datetime | None
     agent_version: str | None
+    ssh_enabled: bool
+    ssh_host: str | None
+    ssh_port: int
+    ssh_username: str | None
+    ssh_password_configured: bool
+    ssh_metrics_interval_seconds: int
+    ssh_collect_docker: bool
+    last_ssh_metrics_at: datetime | None
     last_speed_test_requested_at: datetime | None
     consecutive_issues: int
     created_at: datetime
@@ -105,6 +127,7 @@ class ServerDetail(ServerRead):
     recent_alerts: list[AlertEventRead]
     latest_results: list[CheckResultRead]
     latest_agent_metric: AgentMetricRead | None = None
+    latest_system_metric: AgentMetricRead | None = None
     current_containers: list[ContainerMetricRead] = Field(default_factory=list)
     recent_diagnostics: list[DiagnosticSnapshotRead] = Field(default_factory=list)
     latest_speed_test: SpeedTestRead | None = None

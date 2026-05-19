@@ -89,6 +89,10 @@ export const api = {
     request(`/servers/${id}/run-check`, {
       method: "POST",
     }),
+  collectServerMetrics: (id) =>
+    request(`/servers/${id}/collect-metrics`, {
+      method: "POST",
+    }),
   runSpeedTest: (id) =>
     request(`/servers/${id}/speed-test`, {
       method: "POST",

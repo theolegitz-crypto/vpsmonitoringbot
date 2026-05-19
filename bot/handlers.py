@@ -24,6 +24,8 @@ from bot.keyboards import (
 )
 from bot.services import (
     alerts_text,
+    containers_text,
+    containers_text_by_id,
     create_server_from_bot,
     delete_server_by_id,
     get_server_detail,
@@ -33,6 +35,8 @@ from bot.services import (
     latest_speed_test_text,
     latest_speed_test_text_by_id,
     list_servers_for_picker,
+    metrics_text,
+    metrics_text_by_id,
     mute_text,
     mute_text_by_id,
     normalize_optional_text,
@@ -65,10 +69,12 @@ ACTION_TITLES = {
     "edit": "✏️ Выбери сервер для редактирования",
     "ping": "📡 Выбери сервер для ping",
     "history": "🕓 Выбери сервер для истории",
-    "ports": "🔌 Выбери сервер для проверки портов",
-    "speed": "⚡ Выбери сервер для запуска speed test",
-    "speedlast": "📶 Выбери сервер, чтобы показать последний speed test",
+    "ports": "🔌 Выбери сервер для портов",
+    "speed": "⚡ Выбери сервер для speed test",
+    "speedlast": "📶 Выбери сервер для последнего speed test",
     "speedhistory": "📈 Выбери сервер для истории speed test",
+    "metrics": "🧠 Выбери сервер для SSH-метрик",
+    "containers": "🐳 Выбери сервер для Docker-контейнеров",
     "mute": "🔕 Выбери сервер, чтобы приглушить уведомления",
     "unmute": "🔔 Выбери сервер, чтобы включить уведомления",
 }
@@ -83,6 +89,8 @@ EXAMPLES_TEXT = (
     "/ping\n"
     "/history\n"
     "/ports\n"
+    "/metrics\n"
+    "/containers\n"
     "/speed\n"
     "/speedlast\n"
     "/speedhistory\n"
@@ -101,7 +109,9 @@ HELP_TEXT = (
     "/ping - выбрать сервер и запустить ping\n"
     "/history - выбрать сервер и открыть историю доступности\n"
     "/ports - выбрать сервер и посмотреть TCP, HTTP и SSL\n"
-    "/speed - выбрать сервер и запустить speed test через агент\n"
+    "/metrics - собрать и показать SSH-метрики VPS\n"
+    "/containers - собрать и показать Docker-контейнеры по SSH\n"
+    "/speed - выбрать сервер и запустить speed test по SSH\n"
     "/speedlast - показать последний speed test без новой постановки в очередь\n"
     "/speedhistory - история speed test по серверу\n"
     "/alerts - последние события и алерты\n"
@@ -130,10 +140,7 @@ async def send_server_picker(message: Message, action: str, page: int = 0) -> No
             reply_markup=menu_markup_for(message),
         )
         return
-    await message.answer(
-        ACTION_TITLES[action],
-        reply_markup=server_picker_keyboard(servers, action, page),
-    )
+    await message.answer(ACTION_TITLES[action], reply_markup=server_picker_keyboard(servers, action, page))
 
 
 async def edit_server_picker(callback: CallbackQuery, action: str, page: int = 0) -> None:
@@ -141,10 +148,7 @@ async def edit_server_picker(callback: CallbackQuery, action: str, page: int = 0
         return
     servers = await list_servers_for_picker()
     if not servers:
-        await callback.message.edit_text(
-            "📭 Пока нет добавленных серверов.",
-            reply_markup=main_menu_inline_keyboard,
-        )
+        await callback.message.edit_text("📭 Пока нет добавленных серверов.", reply_markup=main_menu_inline_keyboard)
         return
     await callback.message.edit_text(
         ACTION_TITLES[action],
@@ -217,7 +221,7 @@ async def cmd_start(message: Message) -> None:
     await message.answer(
         "👋 SwagMonitor готов к работе.\n\n"
         "В личке можно пользоваться кнопками меню, а в группах и topics меню работает через inline-кнопки.\n"
-        "Открой «🖥 Серверы» или используй /server, /speed, /speedlast, /speedhistory, /ping, /history, /ports.\n\n"
+        "Открой «🖥 Серверы» или используй /server, /metrics, /containers, /speed, /ping, /history, /ports.\n\n"
         "Если мониторинг ещё не настроен, сначала добавь сервер через /addserver или из веб-панели.",
         reply_markup=menu_markup_for(message),
     )
@@ -309,6 +313,28 @@ async def cmd_ports(message: Message, command: CommandObject) -> None:
         await message.answer(text or "❌ Сервер не найден")
         return
     await send_server_picker(message, "ports")
+
+
+@router.message(Command("metrics"))
+async def cmd_metrics(message: Message, command: CommandObject) -> None:
+    if not await ensure_message_allowed(message):
+        return
+    if command.args:
+        text = await metrics_text(command.args.strip())
+        await message.answer(text or "❌ Сервер не найден")
+        return
+    await send_server_picker(message, "metrics")
+
+
+@router.message(Command("containers"))
+async def cmd_containers(message: Message, command: CommandObject) -> None:
+    if not await ensure_message_allowed(message):
+        return
+    if command.args:
+        text = await containers_text(command.args.strip())
+        await message.answer(text or "❌ Сервер не найден")
+        return
+    await send_server_picker(message, "containers")
 
 
 @router.message(Command("speed"))
@@ -560,10 +586,7 @@ async def add_server_ssl_step(message: Message, state: FSMContext) -> None:
         detail = await get_server_detail(server.id)
         await message.answer(
             text,
-            reply_markup=server_actions_keyboard(
-                server.id,
-                is_muted=detail.muted_until is not None if detail else False,
-            ),
+            reply_markup=server_actions_keyboard(server.id, is_muted=detail.muted_until is not None if detail else False),
         )
 
 
@@ -751,6 +774,18 @@ async def server_action_callback(callback: CallbackQuery) -> None:
         await render_server_action_text(callback, server_id, text)
     elif action == "ports":
         text = await ports_text_by_id(server_id)
+        if not text:
+            await callback.answer("Сервер не найден", show_alert=True)
+            return
+        await render_server_action_text(callback, server_id, text)
+    elif action == "metrics":
+        text = await metrics_text_by_id(server_id)
+        if not text:
+            await callback.answer("Сервер не найден", show_alert=True)
+            return
+        await render_server_action_text(callback, server_id, text)
+    elif action == "containers":
+        text = await containers_text_by_id(server_id)
         if not text:
             await callback.answer("Сервер не найден", show_alert=True)
             return

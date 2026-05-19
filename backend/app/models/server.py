@@ -27,6 +27,14 @@ class Server(Base):
     packet_loss_critical: Mapped[float] = mapped_column(Float, default=20.0)
     check_interval_seconds: Mapped[int] = mapped_column(Integer, default=60)
     consecutive_alert_threshold: Mapped[int] = mapped_column(Integer, default=3)
+    ssh_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    ssh_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    ssh_port: Mapped[int] = mapped_column(Integer, default=22)
+    ssh_username: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    ssh_password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ssh_metrics_interval_seconds: Mapped[int] = mapped_column(Integer, default=300)
+    ssh_collect_docker: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_ssh_metrics_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     speed_test_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     speed_test_interval_seconds: Mapped[int] = mapped_column(Integer, default=21600)
     last_speed_test_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -57,3 +65,7 @@ class Server(Base):
     speed_test_results = relationship(
         "SpeedTestResult", back_populates="server", cascade="all, delete-orphan"
     )
+
+    @property
+    def ssh_password_configured(self) -> bool:
+        return bool(self.ssh_password_encrypted)

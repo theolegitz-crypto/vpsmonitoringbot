@@ -12,6 +12,7 @@ from backend.app.core.config import settings
 from backend.app.models import AlertEvent, Server, Severity, SpeedTestResult, SpeedTestStatus
 from backend.app.schemas.speed_test import AgentSpeedTestCompleteRequest
 from backend.app.services.notifier import TelegramNotifier
+from backend.app.services.ssh_remote import SshRemoteService
 
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,8 @@ class SpeedTestService:
         self.session_factory = session_factory
         self.notifier = TelegramNotifier()
         self._schedule_lock = asyncio.Lock()
+        self._process_lock = asyncio.Lock()
+        self.remote = SshRemoteService()
 
     async def queue_speed_test(self, server_id: int) -> tuple[SpeedTestResult, bool]:
         async with self.session_factory() as session:
@@ -113,6 +116,66 @@ class SpeedTestService:
                 logger.info("Queued %s scheduled speed test(s)", queued)
             return {"queued": queued, "existing": existing}
 
+    async def process_queued_ssh_speed_tests(self) -> dict[str, int]:
+        if self._process_lock.locked():
+            return {"processed": 0, "completed": 0, "failed": 0}
+
+        async with self._process_lock:
+            try:
+                async with self.session_factory() as session:
+                    rows = (
+                        await session.execute(
+                            select(SpeedTestResult.id, SpeedTestResult.server_id)
+                            .join(Server, Server.id == SpeedTestResult.server_id)
+                            .where(
+                                SpeedTestResult.status == SpeedTestStatus.PENDING,
+                                Server.ssh_enabled.is_(True),
+                            )
+                            .order_by(SpeedTestResult.created_at.asc())
+                        )
+                    ).all()
+            except SQLAlchemyError as exc:
+                logger.warning(
+                    "SSH speed test processor skipped because database schema is not ready. Run Alembic migrations first. Details: %s",
+                    exc,
+                )
+                return {"processed": 0, "completed": 0, "failed": 0}
+
+            processed = 0
+            completed = 0
+            failed = 0
+
+            for speed_test_id, server_id in rows:
+                claimed = await self._claim_speed_test_for_processing(speed_test_id, server_id)
+                if not claimed:
+                    continue
+
+                processed += 1
+                _, server = claimed
+                try:
+                    payload = await self.remote.run_speed_test(server)
+                except Exception as exc:
+                    payload = AgentSpeedTestCompleteRequest(
+                        status=SpeedTestStatus.FAILED,
+                        error=str(exc)[:500],
+                        details={"source": "ssh"},
+                    )
+
+                result = await self.complete(speed_test_id, payload)
+                if result.status == SpeedTestStatus.COMPLETED:
+                    completed += 1
+                else:
+                    failed += 1
+
+            if processed:
+                logger.info(
+                    "Processed %s SSH speed test(s): %s completed, %s failed",
+                    processed,
+                    completed,
+                    failed,
+                )
+            return {"processed": processed, "completed": completed, "failed": failed}
+
     async def claim_next(self, server_id: int | None, server_name: str | None) -> SpeedTestResult | None:
         async with self.session_factory() as session:
             server = await self._resolve_server(session, server_id, server_name)
@@ -191,6 +254,26 @@ class SpeedTestService:
                 )
             ).all()
             return list(items)
+
+    async def _claim_speed_test_for_processing(
+        self,
+        speed_test_id: int,
+        server_id: int,
+    ) -> tuple[SpeedTestResult, Server] | None:
+        async with self.session_factory() as session:
+            item = await session.get(SpeedTestResult, speed_test_id)
+            server = await session.get(Server, server_id)
+            if not item or not server:
+                return None
+            if item.status != SpeedTestStatus.PENDING or not server.ssh_enabled:
+                return None
+
+            item.status = SpeedTestStatus.RUNNING
+            item.started_at = datetime.now(timezone.utc)
+            await session.commit()
+            await session.refresh(item)
+            await session.refresh(server)
+            return item, server
 
     @staticmethod
     async def _resolve_server(

@@ -152,6 +152,9 @@ class DashboardService:
                 latest_agent_metric=(
                     AgentMetricRead.model_validate(latest_agent_metric) if latest_agent_metric else None
                 ),
+                latest_system_metric=(
+                    AgentMetricRead.model_validate(latest_agent_metric) if latest_agent_metric else None
+                ),
                 current_containers=[
                     ContainerMetricRead.model_validate(item) for item in current_containers
                 ],
@@ -193,6 +196,7 @@ class DashboardService:
         services = [await self._build_service_check_read(session, service) for service in server.service_checks]
         return ServerCard(
             **server.__dict__,
+            ssh_password_configured=server.ssh_password_configured,
             uptime_24h=await self._uptime(session, server.id, timedelta(hours=24)),
             uptime_7d=await self._uptime(session, server.id, timedelta(days=7)),
             uptime_30d=await self._uptime(session, server.id, timedelta(days=30)),

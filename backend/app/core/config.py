@@ -51,8 +51,15 @@ class Settings(BaseSettings):
     ping_timeout_seconds: int = 1
     default_check_interval_seconds: int = 60
     default_consecutive_alert_threshold: int = 3
+    default_ssh_metrics_interval_seconds: int = 300
     default_speed_test_enabled: bool = False
     default_speed_test_interval_seconds: int = 21600
+    ssh_scheduler_enabled: bool = True
+    ssh_connect_timeout_seconds: int = 8
+    ssh_command_timeout_seconds: int = 20
+    ssh_speed_test_timeout_seconds: int = 180
+    ssh_allow_unknown_hosts: bool = True
+    ssh_credentials_key: str = ""
     speed_test_scheduler_enabled: bool = True
     http_timeout_seconds: int = 5
     ssl_warning_days: int = 21

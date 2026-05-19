@@ -144,6 +144,21 @@ export function ServerPage() {
     }
   }
 
+  async function handleCollectMetrics() {
+    if (!server) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.collectServerMetrics(server.id);
+      await loadServer();
+    } catch (collectError) {
+      setError(collectError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleShowLatestSpeedTest() {
     if (!server) {
       return;
@@ -162,7 +177,7 @@ export function ServerPage() {
     return <div className="py-24 text-center text-slate-300">{error || "Loading server..."}</div>;
   }
 
-  const latestAgentMetric = server.latest_agent_metric;
+  const latestAgentMetric = server.latest_system_metric || server.latest_agent_metric;
   const latestSpeedTest = server.latest_speed_test;
   const speedHistory = server.speed_test_history || [];
 
@@ -207,11 +222,19 @@ export function ServerPage() {
             </button>
             <button
               type="button"
+              onClick={handleCollectMetrics}
+              disabled={busy || !server.ssh_enabled}
+              className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-medium transition hover:bg-white/10 disabled:opacity-60"
+            >
+              Collect metrics now
+            </button>
+            <button
+              type="button"
               onClick={handleRunSpeedTest}
-              disabled={busy}
+              disabled={busy || !server.ssh_enabled}
               className="inline-flex items-center gap-3 rounded-full border border-accent/30 bg-accent/10 px-5 py-3 text-sm font-medium text-white transition hover:bg-accent/20 disabled:opacity-60"
             >
-              Run speed test
+              Run speed test over SSH
             </button>
             <button
               type="button"
@@ -271,20 +294,22 @@ export function ServerPage() {
 
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <div className="rounded-3xl bg-white/5 p-5">
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Agent last seen</p>
-            <p className="mt-2 text-sm font-medium text-slate-200">{formatDate(server.agent_last_seen_at)}</p>
+            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">SSH metrics</p>
+            <p className="mt-2 text-sm font-medium text-slate-200">{server.ssh_enabled ? "Enabled" : "Disabled"}</p>
+            <p className="mt-2 text-xs text-slate-500">{server.ssh_username ? `${server.ssh_username}@${server.ssh_host || server.address}:${server.ssh_port}` : "Credentials are not configured yet"}</p>
           </div>
           <div className="rounded-3xl bg-white/5 p-5">
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Agent version</p>
-            <p className="mt-2 text-2xl font-semibold">{server.agent_version || "n/a"}</p>
+            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Last SSH snapshot</p>
+            <p className="mt-2 text-sm font-medium text-slate-200">{formatDate(server.last_ssh_metrics_at)}</p>
           </div>
           <div className="rounded-3xl bg-white/5 p-5">
             <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Diagnostics stored</p>
             <p className="mt-2 text-2xl font-semibold">{server.recent_diagnostics.length}</p>
           </div>
           <div className="rounded-3xl bg-white/5 p-5">
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Containers in last snapshot</p>
-            <p className="mt-2 text-2xl font-semibold">{server.current_containers.length}</p>
+            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Docker collection</p>
+            <p className="mt-2 text-2xl font-semibold">{server.ssh_collect_docker ? "On" : "Off"}</p>
+            <p className="mt-2 text-sm text-slate-400">{server.current_containers.length} containers in the latest snapshot</p>
           </div>
           <div className="rounded-3xl bg-white/5 p-5">
             <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Speed test schedule</p>
@@ -329,10 +354,18 @@ export function ServerPage() {
           <div>
             <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Speed test</p>
             <h2 className="mt-2 text-2xl font-bold">Server bandwidth check</h2>
-            <p className="mt-2 text-sm text-slate-400">Runs on the VPS agent, not in the browser, so it measures the server itself.</p>
+            <p className="mt-2 text-sm text-slate-400">Runs over SSH on the server itself, not in the browser, so it measures the VPS directly.</p>
             <p className="mt-2 text-sm text-slate-500">
               Schedule: {server.speed_test_enabled ? `enabled every ${formatDuration(server.speed_test_interval_seconds)}` : "disabled"}.
             </p>
+            <p className="mt-2 text-sm text-slate-500">
+              Requires `speedtest` or `speedtest-cli` to be already installed on the VPS.
+            </p>
+            {!server.ssh_enabled ? (
+              <p className="mt-2 text-sm text-amber-200">
+                SSH is currently disabled for this server, so queueing is blocked until you add SSH credentials.
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <button
@@ -346,10 +379,10 @@ export function ServerPage() {
             <button
               type="button"
               onClick={handleRunSpeedTest}
-              disabled={busy}
+              disabled={busy || !server.ssh_enabled}
               className="inline-flex items-center gap-3 rounded-full border border-accent/30 bg-accent/10 px-5 py-3 text-sm font-medium text-white transition hover:bg-accent/20 disabled:opacity-60"
             >
-              Queue speed test
+              Queue over SSH
             </button>
           </div>
         </div>
@@ -388,7 +421,7 @@ export function ServerPage() {
           </>
         ) : (
           <div className="rounded-3xl bg-white/5 p-4 text-sm text-slate-400">
-            Speed test has not been run yet. Queue one to measure download, upload and latency directly from the VPS agent.
+            Speed test has not been run yet. Queue one to measure download, upload and latency directly from the VPS over SSH.
           </div>
         )}
 
@@ -443,8 +476,8 @@ export function ServerPage() {
       <section className="rounded-[2rem] border border-white/8 bg-panel/88 p-6 shadow-glow">
         <div className="mb-5">
           <p className="text-xs uppercase tracking-[0.24em] text-slate-400">System metrics</p>
-          <h2 className="mt-2 text-2xl font-bold">Latest VPS snapshot from the agent</h2>
-          <p className="mt-2 text-sm text-slate-400">CPU, memory, disk, load average, uptime and cumulative network counters.</p>
+          <h2 className="mt-2 text-2xl font-bold">Latest VPS snapshot over SSH</h2>
+          <p className="mt-2 text-sm text-slate-400">CPU, memory, disk, load average, uptime and cumulative network counters collected without any agent process on the node.</p>
         </div>
 
         {latestAgentMetric ? (
@@ -497,7 +530,7 @@ export function ServerPage() {
           </>
         ) : (
           <div className="rounded-3xl bg-white/5 p-4 text-sm text-slate-400">
-            Agent data has not arrived yet. Start the VPS agent on this server to collect CPU, RAM, disk, load and network metrics.
+            No SSH metrics have been collected yet. Enable SSH on this server, add login and password, then run "Collect metrics now".
           </div>
         )}
       </section>
@@ -555,11 +588,11 @@ export function ServerPage() {
 
       <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <div className="rounded-[2rem] border border-white/8 bg-panel/88 p-6 shadow-glow">
-          <div className="mb-5">
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Containers</p>
-            <h2 className="mt-2 text-2xl font-bold">Latest Docker snapshot</h2>
-            <p className="mt-2 text-sm text-slate-400">Current container state, health, restart count and resource usage sent by the agent.</p>
-          </div>
+        <div className="mb-5">
+          <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Containers</p>
+          <h2 className="mt-2 text-2xl font-bold">Latest Docker snapshot over SSH</h2>
+          <p className="mt-2 text-sm text-slate-400">Current container state, health, restart count and resource usage collected from Docker commands on the VPS.</p>
+        </div>
 
           {server.current_containers.length ? (
             <div className="overflow-x-auto">
@@ -598,7 +631,7 @@ export function ServerPage() {
             </div>
           ) : (
             <div className="rounded-3xl bg-white/5 p-4 text-sm text-slate-400">
-              No container metrics received yet. If this VPS runs Docker, enable container collection in the agent.
+              No container metrics received yet. If this VPS runs Docker, keep Docker collection enabled and run an SSH metrics snapshot.
             </div>
           )}
         </div>

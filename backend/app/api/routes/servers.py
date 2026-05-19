@@ -15,6 +15,8 @@ from backend.app.services.dashboard import DashboardService
 from backend.app.services.monitoring import MonitoringService
 from backend.app.services.server_management import apply_server_updates
 from backend.app.services.speedtests import SpeedTestService
+from backend.app.services.ssh_monitoring import SshMonitoringService
+from backend.app.services.ssh_remote import SshRemoteService
 from backend.app.utils.time import parse_duration
 
 
@@ -22,6 +24,13 @@ router = APIRouter(prefix="/servers", tags=["servers"])
 dashboard_service = DashboardService(AsyncSessionLocal)
 monitoring_service = MonitoringService(AsyncSessionLocal)
 speed_test_service = SpeedTestService(AsyncSessionLocal)
+ssh_monitoring_service = SshMonitoringService(AsyncSessionLocal)
+ssh_remote_service = SshRemoteService()
+
+
+def _optional_text(value: str | None) -> str | None:
+    normalized = (value or "").strip()
+    return normalized or None
 
 
 @router.get("", response_model=list[ServerCard])
@@ -36,6 +45,11 @@ async def create_server(payload: ServerCreate) -> ServerRead:
         if existing:
             raise HTTPException(status_code=409, detail="Server with this name already exists")
 
+        try:
+            encrypted_password = ssh_remote_service.encrypt_password(payload.ssh_password)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
         server = Server(
             name=payload.name,
             address=payload.address,
@@ -46,6 +60,13 @@ async def create_server(payload: ServerCreate) -> ServerRead:
             packet_loss_critical=payload.packet_loss_critical,
             check_interval_seconds=payload.check_interval_seconds,
             consecutive_alert_threshold=payload.consecutive_alert_threshold,
+            ssh_enabled=payload.ssh_enabled,
+            ssh_host=_optional_text(payload.ssh_host),
+            ssh_port=payload.ssh_port,
+            ssh_username=_optional_text(payload.ssh_username),
+            ssh_password_encrypted=encrypted_password,
+            ssh_metrics_interval_seconds=payload.ssh_metrics_interval_seconds,
+            ssh_collect_docker=payload.ssh_collect_docker,
             speed_test_enabled=payload.speed_test_enabled,
             speed_test_interval_seconds=payload.speed_test_interval_seconds,
         )
@@ -88,8 +109,22 @@ async def update_server(server_id: int, payload: ServerUpdate) -> ServerRead:
         if not server:
             raise HTTPException(status_code=404, detail="Server not found")
 
+        updates = payload.model_dump(exclude_unset=True)
+        ssh_password = updates.pop("ssh_password", None)
+        if "ssh_host" in updates:
+            updates["ssh_host"] = _optional_text(updates["ssh_host"])
+        if "ssh_username" in updates:
+            updates["ssh_username"] = _optional_text(updates["ssh_username"])
+        if ssh_password is not None:
+            normalized_password = _optional_text(ssh_password)
+            if normalized_password:
+                try:
+                    server.ssh_password_encrypted = ssh_remote_service.encrypt_password(normalized_password)
+                except RuntimeError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+
         try:
-            await apply_server_updates(session, server, payload.model_dump(exclude_unset=True))
+            await apply_server_updates(session, server, updates)
         except ValueError as exc:
             detail = str(exc)
             raise HTTPException(
@@ -143,6 +178,23 @@ async def run_server_check(server_id: int) -> ServerRead:
     if not server:
         raise HTTPException(status_code=404, detail="Server not found")
     return ServerRead.model_validate(server)
+
+
+@router.post("/{server_id}/collect-metrics", response_model=MessageResponse)
+async def collect_server_metrics(server_id: int) -> MessageResponse:
+    try:
+        result = await ssh_monitoring_service.collect_server_metrics(server_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return MessageResponse(
+        message=(
+            f"SSH metrics collected for {result.server_name} at {result.recorded_at.isoformat()}. "
+            f"Containers received: {result.containers_received}"
+        )
+    )
 
 
 @router.post("/{server_id}/speed-test", response_model=SpeedTestQueueResponse)

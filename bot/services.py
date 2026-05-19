@@ -9,6 +9,7 @@ from backend.app.services.dashboard import DashboardService
 from backend.app.services.monitoring import MonitoringService
 from backend.app.services.server_management import apply_server_updates
 from backend.app.services.speedtests import SpeedTestService
+from backend.app.services.ssh_monitoring import SshMonitoringService
 from backend.app.utils.service_checks import check_ssl_expiry
 from backend.app.utils.time import parse_duration
 
@@ -16,6 +17,7 @@ from backend.app.utils.time import parse_duration
 dashboard_service = DashboardService(AsyncSessionLocal)
 monitoring_service = MonitoringService(AsyncSessionLocal)
 speed_test_service = SpeedTestService(AsyncSessionLocal)
+ssh_monitoring_service = SshMonitoringService(AsyncSessionLocal)
 
 
 STATUS_LABELS = {
@@ -151,7 +153,7 @@ def help_text() -> str:
         "/ping - выбрать сервер и запустить ping\n"
         "/history - выбрать сервер и открыть историю\n"
         "/ports - выбрать сервер и посмотреть TCP, HTTP и SSL\n"
-        "/speed - выбрать сервер и запустить speed test через агент\n"
+        "/speed - выбрать сервер и запустить speed test по SSH\n"
         "/alerts - последние события и алерты\n"
         "/addserver - добавить сервер прямо через Telegram\n"
         "/mute - приглушить уведомления для сервера\n"
@@ -212,7 +214,7 @@ def _format_speed_test_block(speed_test) -> str:
     if speed_test.status == SpeedTestStatus.PENDING:
         return (
             "⚡ Speed test поставлен в очередь.\n"
-            "Агент заберёт задачу на следующем heartbeat."
+            "Backend выполнит задачу по SSH на следующем цикле scheduler."
         )
 
     if speed_test.status == SpeedTestStatus.RUNNING:
@@ -493,13 +495,20 @@ async def speed_test_text_by_id(server_id: int) -> str | None:
     if not server:
         return None
 
+    if not server.ssh_enabled:
+        return (
+            f"⚡ {server.name}\n"
+            "Speed test по SSH пока недоступен.\n"
+            "Открой сервер в панели, включи SSH и заполни логин с паролем."
+        )
+
     queued_item, queued = await speed_test_service.queue_speed_test(server.id)
     detail = await get_server_detail(server.id)
 
     queue_line = (
-        "⚡ Speed test поставлен в очередь. Агент заберёт задачу на следующем heartbeat."
+        "⚡ Speed test поставлен в очередь. Backend выполнит его по SSH на ближайшем цикле scheduler."
         if queued
-        else "⚡ На сервере уже есть незавершённый speed test. Ждём результат от агента."
+        else "⚡ На сервере уже есть незавершённый speed test. Ждём результат SSH-проверки."
     )
 
     latest_block = _format_speed_test_block(detail.latest_speed_test) if detail else _format_speed_test_block(queued_item)
@@ -660,3 +669,106 @@ async def delete_server_by_id(server_id: int) -> str | None:
         await session.delete(server)
         await session.commit()
         return name
+
+
+def _format_system_metrics_block(detail) -> str:
+    metric = detail.latest_system_metric or detail.latest_agent_metric
+    if not metric:
+        return (
+            f"🧠 {detail.name}\n"
+            "Метрики ещё не собраны.\n"
+            "Включи SSH в панели, добавь логин и пароль, затем запусти сбор метрик."
+        )
+
+    load_line = " / ".join(
+        "n/a" if value is None else f"{value:.2f}"
+        for value in [metric.load_1, metric.load_5, metric.load_15]
+    )
+    docker_details = (metric.details or {}).get("docker") or {}
+    docker_summary = (
+        f"контейнеров {docker_details.get('count', 0)}"
+        if docker_details.get("available", True)
+        else docker_details.get("reason", "docker unavailable")
+    )
+
+    return (
+        f"🧠 {detail.name}\n"
+        f"Снимок: {metric.recorded_at:%Y-%m-%d %H:%M}\n"
+        f"CPU: {_safe_percent(metric.cpu_percent)}\n"
+        f"RAM: {_safe_percent(metric.memory_percent)} | "
+        f"{metric.memory_used_mb or 0:.0f}/{metric.memory_total_mb or 0:.0f} MB\n"
+        f"Swap: {_safe_percent(metric.swap_percent)}\n"
+        f"Disk: {_safe_percent(metric.disk_percent)} | "
+        f"{metric.disk_used_gb or 0:.2f}/{metric.disk_total_gb or 0:.2f} GB\n"
+        f"Load: {load_line}\n"
+        f"RX/TX: {metric.net_rx_bytes or 0} / {metric.net_tx_bytes or 0} bytes\n"
+        f"Uptime: {metric.uptime_seconds or 0} sec\n"
+        f"Docker: {docker_summary}"
+    )
+
+
+def _format_containers_block(detail) -> str:
+    containers = detail.current_containers or []
+    if not containers:
+        return (
+            f"🐳 {detail.name}\n"
+            "Контейнеры ещё не получены.\n"
+            "Если на VPS есть Docker, оставь Docker collection включённым и запусти сбор метрик."
+        )
+
+    lines = [f"🐳 Контейнеры на {detail.name}"]
+    for container in containers[:10]:
+        lines.append(
+            f"- {container.name} | {container.state or container.status or 'n/a'} | "
+            f"health {container.health_status or 'n/a'} | "
+            f"restart {container.restart_count or 0} | "
+            f"CPU {_safe_percent(container.cpu_percent)} | "
+            f"RAM {_safe_percent(container.memory_percent)}"
+        )
+    return "\n".join(lines)
+
+
+async def metrics_text_by_id(server_id: int) -> str | None:
+    server = await find_server_by_id(server_id)
+    if not server:
+        return None
+
+    try:
+        await ssh_monitoring_service.collect_server_metrics(server.id)
+    except Exception as exc:
+        return f"❌ Не удалось собрать SSH-метрики для {server.name}: {exc}"
+
+    detail = await get_server_detail(server.id)
+    if not detail:
+        return None
+    return _format_system_metrics_block(detail)
+
+
+async def metrics_text(name: str) -> str | None:
+    server = await find_server_by_name(name)
+    if not server:
+        return None
+    return await metrics_text_by_id(server.id)
+
+
+async def containers_text_by_id(server_id: int) -> str | None:
+    server = await find_server_by_id(server_id)
+    if not server:
+        return None
+
+    try:
+        await ssh_monitoring_service.collect_server_metrics(server.id)
+    except Exception as exc:
+        return f"❌ Не удалось получить контейнеры по SSH для {server.name}: {exc}"
+
+    detail = await get_server_detail(server.id)
+    if not detail:
+        return None
+    return _format_containers_block(detail)
+
+
+async def containers_text(name: str) -> str | None:
+    server = await find_server_by_name(name)
+    if not server:
+        return None
+    return await containers_text_by_id(server.id)

@@ -12,6 +12,14 @@ function toFormState(server) {
     packet_loss_critical: String(server.packet_loss_critical ?? 20),
     check_interval_seconds: String(server.check_interval_seconds ?? 60),
     consecutive_alert_threshold: String(server.consecutive_alert_threshold ?? 3),
+    ssh_enabled: Boolean(server.ssh_enabled),
+    ssh_host: server.ssh_host || "",
+    ssh_port: String(server.ssh_port ?? 22),
+    ssh_username: server.ssh_username || "",
+    ssh_password: "",
+    ssh_password_configured: Boolean(server.ssh_password_configured),
+    ssh_metrics_interval_seconds: String(server.ssh_metrics_interval_seconds ?? 300),
+    ssh_collect_docker: Boolean(server.ssh_collect_docker ?? true),
     speed_test_enabled: Boolean(server.speed_test_enabled),
     speed_test_interval_seconds: String(server.speed_test_interval_seconds ?? 21600),
   };
@@ -33,7 +41,7 @@ export function ServerSettingsForm({ server, busy, onSubmit, onCancel }) {
   async function handleSubmit(event) {
     event.preventDefault();
 
-    await onSubmit({
+    const payload = {
       name: form.name.trim(),
       address: form.address.trim(),
       description: form.description.trim() || null,
@@ -43,9 +51,21 @@ export function ServerSettingsForm({ server, busy, onSubmit, onCancel }) {
       packet_loss_critical: Number(form.packet_loss_critical),
       check_interval_seconds: Number(form.check_interval_seconds),
       consecutive_alert_threshold: Number(form.consecutive_alert_threshold),
+      ssh_enabled: Boolean(form.ssh_enabled),
+      ssh_host: form.ssh_host.trim() || null,
+      ssh_port: Number(form.ssh_port),
+      ssh_username: form.ssh_username.trim() || null,
+      ssh_metrics_interval_seconds: Number(form.ssh_metrics_interval_seconds),
+      ssh_collect_docker: Boolean(form.ssh_collect_docker),
       speed_test_enabled: Boolean(form.speed_test_enabled),
       speed_test_interval_seconds: Number(form.speed_test_interval_seconds),
-    });
+    };
+
+    if (form.ssh_password.trim()) {
+      payload.ssh_password = form.ssh_password.trim();
+    }
+
+    await onSubmit(payload);
   }
 
   return (
@@ -175,6 +195,94 @@ export function ServerSettingsForm({ server, busy, onSubmit, onCancel }) {
             onChange={handleChange}
             className="rounded-2xl border border-white/10 bg-slate-950/30 px-4 py-3 text-sm outline-none transition focus:border-accent"
           />
+        </label>
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/30 px-4 py-3 text-sm text-slate-200">
+          <input
+            type="checkbox"
+            name="ssh_enabled"
+            checked={form.ssh_enabled}
+            onChange={handleChange}
+            className="h-4 w-4 rounded border-white/20 bg-slate-950/30 text-accent focus:ring-accent"
+          />
+          <span>Enable SSH metrics and remote speed tests</span>
+        </label>
+        <label className="grid gap-2 text-sm">
+          <span className="text-slate-300">SSH host</span>
+          <input
+            name="ssh_host"
+            value={form.ssh_host}
+            onChange={handleChange}
+            placeholder="Leave blank to reuse the monitor address"
+            className="rounded-2xl border border-white/10 bg-slate-950/30 px-4 py-3 text-sm outline-none transition focus:border-accent"
+          />
+        </label>
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <label className="grid gap-2 text-sm">
+          <span className="text-slate-300">SSH port</span>
+          <input
+            required
+            type="number"
+            min="1"
+            max="65535"
+            name="ssh_port"
+            value={form.ssh_port}
+            onChange={handleChange}
+            className="rounded-2xl border border-white/10 bg-slate-950/30 px-4 py-3 text-sm outline-none transition focus:border-accent"
+          />
+        </label>
+        <label className="grid gap-2 text-sm">
+          <span className="text-slate-300">SSH username</span>
+          <input
+            name="ssh_username"
+            value={form.ssh_username}
+            onChange={handleChange}
+            className="rounded-2xl border border-white/10 bg-slate-950/30 px-4 py-3 text-sm outline-none transition focus:border-accent"
+          />
+        </label>
+        <label className="grid gap-2 text-sm xl:col-span-2">
+          <span className="text-slate-300">SSH password</span>
+          <input
+            type="password"
+            name="ssh_password"
+            value={form.ssh_password}
+            onChange={handleChange}
+            placeholder={form.ssh_password_configured ? "Leave blank to keep the stored password" : "Enter the SSH password"}
+            className="rounded-2xl border border-white/10 bg-slate-950/30 px-4 py-3 text-sm outline-none transition focus:border-accent"
+          />
+          <span className="text-xs text-slate-500">
+            {form.ssh_password_configured ? "A password is already stored in encrypted form." : "No SSH password is stored yet."}
+          </span>
+        </label>
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        <label className="grid gap-2 text-sm">
+          <span className="text-slate-300">SSH metrics interval, seconds</span>
+          <input
+            required
+            type="number"
+            min="30"
+            step="30"
+            name="ssh_metrics_interval_seconds"
+            value={form.ssh_metrics_interval_seconds}
+            onChange={handleChange}
+            className="rounded-2xl border border-white/10 bg-slate-950/30 px-4 py-3 text-sm outline-none transition focus:border-accent"
+          />
+        </label>
+        <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/30 px-4 py-3 text-sm text-slate-200">
+          <input
+            type="checkbox"
+            name="ssh_collect_docker"
+            checked={form.ssh_collect_docker}
+            onChange={handleChange}
+            className="h-4 w-4 rounded border-white/20 bg-slate-950/30 text-accent focus:ring-accent"
+          />
+          <span>Collect Docker containers over SSH</span>
         </label>
       </div>
 

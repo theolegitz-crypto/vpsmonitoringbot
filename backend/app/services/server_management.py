@@ -53,5 +53,7 @@ async def apply_server_updates(
         for check in checks:
             if check.check_type == CheckType.TCP and check.target == old_address:
                 check.target = server.address
+        if payload.get("ssh_host") is None and server.ssh_host == old_address:
+            server.ssh_host = server.address
 
     return server

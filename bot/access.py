@@ -16,7 +16,7 @@ def describe_telegram_context(
         else "Topic ID: `none`\n"
     )
     return (
-        "📍 Информация о текущем чате\n\n"
+        "📌 Информация о текущем чате\n\n"
         f"Chat ID: `{chat_id}`\n"
         f"Тип чата: `{chat_type}`\n"
         f"{topic_line}"
@@ -52,9 +52,7 @@ def is_callback_allowed(callback: CallbackQuery) -> bool:
 
 
 async def ensure_message_allowed(message: Message) -> bool:
-    if is_message_allowed(message):
-        return True
-    return False
+    return is_message_allowed(message)
 
 
 async def ensure_callback_allowed(callback: CallbackQuery) -> bool:
